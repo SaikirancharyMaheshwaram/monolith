@@ -5,6 +5,7 @@ import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import {
   airdropIfNeeded,
   DURATIONS,
+  expectAnchorError,
   getDuelPda,
   getEscrowPda,
   getNonce,
@@ -13,6 +14,7 @@ import {
 } from "./helper/helper";
 import { SYSTEM_PROGRAM } from "./helper/constant";
 import { expect } from "chai";
+import chaiAsPromised from "chai-as-promised";
 
 describe("createDuel", () => {
   const provider = anchor.AnchorProvider.env();
@@ -203,6 +205,90 @@ describe("createDuel", () => {
     logTransactionResult(
       `  365-days duel | duration: ${duration / DURATIONS.oneYear} days`,
       tx
+    );
+  });
+
+  it("Fails when stake_amount is 0", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime: start, endTime: end } = streakWindow(DURATIONS.oneWeek);
+
+    await expectAnchorError(
+      program.methods
+        .createDuel(nonce, new anchor.BN(0), start, end)
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "StakeTooSmall"
+    );
+  });
+  it("Fails when duration is 1 hour", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime: start, endTime: end } = streakWindow(DURATIONS.oneHour);
+
+    await expectAnchorError(
+      program.methods
+        .createDuel(nonce, stakeAmount, start, end)
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "DurationTooShort"
+    );
+  });
+  it("Fails when duration exceeds 365 days", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime: start, endTime: end } = streakWindow(
+      DURATIONS.oneYear + 1
+    );
+
+    await expectAnchorError(
+      program.methods
+        .createDuel(nonce, stakeAmount, start, end)
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "DurationTooLong"
+    );
+  });
+
+  it("Fails when end_time <= start_time", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime: start, endTime: end } = streakWindow(DURATIONS.oneWeek);
+
+    await expectAnchorError(
+      program.methods
+        .createDuel(nonce, stakeAmount, end, start) // swapped
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "InvalidTimeRange"
     );
   });
 });

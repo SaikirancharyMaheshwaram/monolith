@@ -62,12 +62,7 @@ impl<'info> CreateDuel<'info> {
             .ok_or(DuelError::Overflow)?;
         require!(duration <= MAX_DUEL_DURATION, DuelError::DurationTooLong);
 
-        let duration = end_time
-            .checked_sub(start_time)
-            .ok_or(DuelError::Overflow)?;
-
         require!(duration >= MIN_DUEL_DURATION, DuelError::DurationTooShort);
-        require!(duration <= MAX_DUEL_DURATION, DuelError::DurationTooLong);
 
         duel.set_inner(Duel {
             creator: self.creator.key(),

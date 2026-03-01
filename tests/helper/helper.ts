@@ -4,6 +4,7 @@ import { DArena } from "../../target/types/d_arena";
 import { DUEL_SEED, ESCROW_SEED } from "./constant";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "crypto";
+import { expect } from "chai";
 
 export async function airdropIfNeeded(
   connection: anchor.web3.Connection,
@@ -70,3 +71,23 @@ export const logTransactionResult = (label: string, txSignature: string) => {
   console.log(`\n${label}:`);
   console.log(`   Txn signature: ${txSignature}`);
 };
+
+export async function expectAnchorError(
+  promise: Promise<any>,
+  errorCode: string
+): Promise<void> {
+  try {
+    await promise;
+    throw new Error(`Expected error "${errorCode}" but transaction succeeded`);
+  } catch (err) {
+    if (err instanceof anchor.AnchorError) {
+      console.log(err.toString());
+      expect(err.error.errorCode.code).to.equal(
+        errorCode,
+        `Expected "${errorCode}" but got "${err.error.errorCode.code}"`
+      );
+    } else {
+      throw err;
+    }
+  }
+}
