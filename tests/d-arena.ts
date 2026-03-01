@@ -153,4 +153,56 @@ describe("createDuel", () => {
       tx
     );
   });
+
+  it("  Creates a 365-day (max duration) duel", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+
+    const { startTime: start, endTime: end } = streakWindow(DURATIONS.oneYear);
+
+    const tx = await program.methods
+      .createDuel(nonce, stakeAmount, start, end)
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+
+    const duel = await program.account.duel.fetch(duelPda);
+    const escrowInfo = await conn.getAccountInfo(escrowPda);
+    const rentMin = await conn.getMinimumBalanceForRentExemption(0);
+    const duration = duel.endTs.sub(duel.startTs).toNumber();
+
+    expect(duel.endTs.toString()).to.equal(end.toString(), "end_ts mismatch");
+
+    expect(duration).to.be.at.least(
+      DURATIONS.oneMonth,
+      "duration should be 365 days"
+    );
+
+    const escrowBalance = await conn.getBalance(escrowPda);
+    expect(escrowBalance).to.be.at.least(
+      rentMin,
+      "escrow is NOT rent-exempt will be garbage collected for long duels!"
+    );
+    expect(escrowInfo).to.not.be.null;
+    expect(escrowInfo!.owner.toBase58()).to.equal(
+      SYSTEM_PROGRAM.toBase58(),
+      "escrow owner should be the program"
+    );
+    expect(escrowInfo!.data.length).to.equal(0, "escrow should have 0 bytes");
+    expect(escrowBalance).to.be.at.least(
+      stakeAmount.toNumber(),
+      "escrow missing stake lamports"
+    );
+
+    logTransactionResult(
+      `  365-days duel | duration: ${duration / DURATIONS.oneYear} days`,
+      tx
+    );
+  });
 });
