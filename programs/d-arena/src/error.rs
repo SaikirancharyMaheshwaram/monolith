@@ -20,4 +20,12 @@ pub enum DuelError {
     VaultOwnerMismatch,
     #[msg("Arithmetic overflow")]
     Overflow,
+    #[msg("Stake must be greater than zero")]
+    StakeTooSmall,
+    #[msg("Insufficient funds for stake and rent")]
+    InsufficientFunds,
+    #[msg("start_time must be strictly before end_time")]
+    InvalidTimeRange,
+    #[msg("end_time is already in the past")]
+    DuelAlreadyExpired,
 }

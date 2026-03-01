@@ -20,7 +20,7 @@ impl Default for DuelStatus {
 pub struct Duel {
     /// participants
     pub creator: Pubkey,
-    pub opponent: Pubkey,
+    pub opponent: Option<Pubkey>,
 
     /// total amount staked
     pub staked_amount: u64,
@@ -31,7 +31,7 @@ pub struct Duel {
     pub end_ts: i64,
 
     /// settlement
-    pub winner: Pubkey,
+    pub winner: Option<Pubkey>,
     pub settlement_nonce: u64, // anti-replay for backend signatures
 
     pub duel_bump: u8,
