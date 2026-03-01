@@ -18,6 +18,8 @@ impl Default for DuelStatus {
 #[account]
 #[derive(Debug, InitSpace)]
 pub struct Duel {
+    pub duel_id: u64,
+
     /// participants
     pub creator: Pubkey,
     pub opponent: Option<Pubkey>,

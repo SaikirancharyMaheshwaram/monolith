@@ -4,17 +4,25 @@ mod error;
 mod instructions;
 mod state;
 mod utils;
+
+use crate::instructions::*;
+
 declare_id!("Hh9ZPWeXuszeX27sUyxBNgL4bHQb6gKo98osWqAkFnZB");
 
 #[program]
 pub mod d_arena {
+
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings from: {:?}", ctx.program_id);
+    pub fn create_duel(
+        ctx: Context<CreateDuel>,
+        duel_nonce: u64,
+        stake_amount: u64,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<()> {
+        ctx.accounts
+            .handler(duel_nonce, stake_amount, start_time, end_time, &ctx.bumps)?;
         Ok(())
     }
 }
-
-#[derive(Accounts)]
-pub struct Initialize {}

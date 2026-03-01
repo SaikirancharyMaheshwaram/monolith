@@ -1,7 +1,7 @@
 use anchor_lang::{prelude::*, system_program::Transfer};
 
 use crate::{
-    constants::{DUEL_SEED, ESCROW_SEED},
+    constants::{DUEL_SEED, ESCROW_SEED, MAX_DUEL_DURATION, MIN_DUEL_DURATION},
     error::DuelError,
     state::{Duel, DuelStatus},
 };
@@ -40,7 +40,7 @@ pub struct CreateDuel<'info> {
 impl<'info> CreateDuel<'info> {
     pub fn handler(
         &mut self,
-        _duel_nonce: u64,
+        duel_nonce: u64,
         stake_amount: u64,
         start_time: i64,
         end_time: i64,
@@ -57,6 +57,18 @@ impl<'info> CreateDuel<'info> {
             DuelError::DuelAlreadyExpired
         );
 
+        let duration = end_time
+            .checked_sub(start_time)
+            .ok_or(DuelError::Overflow)?;
+        require!(duration <= MAX_DUEL_DURATION, DuelError::DurationTooLong);
+
+        let duration = end_time
+            .checked_sub(start_time)
+            .ok_or(DuelError::Overflow)?;
+
+        require!(duration >= MIN_DUEL_DURATION, DuelError::DurationTooShort);
+        require!(duration <= MAX_DUEL_DURATION, DuelError::DurationTooLong);
+
         duel.set_inner(Duel {
             creator: self.creator.key(),
             opponent: None,
@@ -69,6 +81,7 @@ impl<'info> CreateDuel<'info> {
             settlement_nonce: 0,
             duel_bump: bumps.duel,
             escrow_bump: bumps.escrow,
+            duel_id: duel_nonce,
         });
 
         // Transfer stake from creator to escrow PDA

@@ -28,4 +28,8 @@ pub enum DuelError {
     InvalidTimeRange,
     #[msg("end_time is already in the past")]
     DuelAlreadyExpired,
+    #[msg("Duel duration exceeds maximum allowed (365 days)")]
+    DurationTooLong,
+    #[msg("Duel duration is below the minimum streak window of 7 days")]
+    DurationTooShort,
 }
