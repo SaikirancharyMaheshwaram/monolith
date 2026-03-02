@@ -25,4 +25,9 @@ pub mod d_arena {
             .handler(duel_nonce, stake_amount, start_time, end_time, &ctx.bumps)?;
         Ok(())
     }
+
+    pub fn join_duel(ctx: Context<JoinDuel>) -> Result<()> {
+        ctx.accounts.handler()?;
+        Ok(())
+    }
 }

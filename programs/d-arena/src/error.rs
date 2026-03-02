@@ -32,4 +32,8 @@ pub enum DuelError {
     DurationTooLong,
     #[msg("Duel duration is below the minimum streak window of 7 days")]
     DurationTooShort,
+    #[msg("Cannot join own duel")]
+    CannotJoinOwnDuel,
+    #[msg("Escrow balance does not match expected total")]
+    EscrowBalanceMismatch,
 }
