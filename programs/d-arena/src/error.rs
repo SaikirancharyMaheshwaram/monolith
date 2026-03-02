@@ -36,4 +36,6 @@ pub enum DuelError {
     CannotJoinOwnDuel,
     #[msg("Escrow balance does not match expected total")]
     EscrowBalanceMismatch,
+    #[msg("Cannot cancel before duel start_time has passed")]
+    CancelTooEarly,
 }

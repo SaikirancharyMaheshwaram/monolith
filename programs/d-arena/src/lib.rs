@@ -30,4 +30,8 @@ pub mod d_arena {
         ctx.accounts.handler()?;
         Ok(())
     }
+
+    pub fn cancel_duel(ctx: Context<CancelDuel>) -> Result<()> {
+        ctx.accounts.handler()
+    }
 }
