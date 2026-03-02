@@ -14,7 +14,6 @@ import {
 } from "./helper/helper";
 import { SYSTEM_PROGRAM } from "./helper/constant";
 import { expect } from "chai";
-import chaiAsPromised from "chai-as-promised";
 
 describe("createDuel", () => {
   const provider = anchor.AnchorProvider.env();
@@ -455,6 +454,228 @@ describe("joinDuel", () => {
         .signers([thirdParty])
         .rpc(),
       "AlreadyJoined"
+    );
+  });
+});
+
+describe("cancelDuel", () => {
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+
+  const program = anchor.workspace.dArena as Program<DArena>;
+  const conn = provider.connection;
+
+  const creator = Keypair.generate();
+  const opponent = Keypair.generate();
+
+  const stakeAmount = new anchor.BN(0.1 * LAMPORTS_PER_SOL);
+
+  before(async () => {
+    await airdropIfNeeded(conn, creator.publicKey, 5 * LAMPORTS_PER_SOL);
+    await airdropIfNeeded(conn, opponent.publicKey, 5 * LAMPORTS_PER_SOL);
+  });
+
+  async function createFreshDuel(
+    staker = creator,
+    stake = stakeAmount,
+    duration = DURATIONS.oneWeek
+  ): Promise<{ duelPda: PublicKey; escrowPda: PublicKey }> {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, staker.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime, endTime } = streakWindow(duration);
+
+    await program.methods
+      .createDuel(nonce, stake, startTime, endTime)
+      .accounts({
+        creator: staker.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([staker])
+      .rpc({ commitment: "confirmed" });
+
+    return { duelPda, escrowPda };
+  }
+
+  it("Creator cancels after start_ts — receives full refund", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+
+    const now = Math.floor(Date.now() / 1000);
+    const startTime = new anchor.BN(now - 10); // start_ts in the past
+    const endTime = new anchor.BN(now + DURATIONS.oneWeek); // valid end_ts
+
+    await program.methods
+      .createDuel(nonce, stakeAmount, startTime, endTime)
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+
+    const creatorBefore = await conn.getBalance(creator.publicKey);
+    const escrowBefore = await conn.getBalance(escrowPda);
+
+    const tx = await program.methods
+      .cancelDuel()
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+
+    const duel = await program.account.duel.fetch(duelPda);
+    const creatorAfter = await conn.getBalance(creator.publicKey);
+    const escrowAfter = await conn.getBalance(escrowPda);
+
+    expect(duel.status.cancelled).to.not.be.undefined;
+
+    expect(escrowAfter).to.equal(
+      escrowBefore - stakeAmount.toNumber(),
+      "escrow should have lost exactly the stake amount"
+    );
+
+    logTransactionResult("cancel duel — full refund", tx);
+    console.log(`  refund: ${stakeAmount.toNumber() / LAMPORTS_PER_SOL} SOL`);
+  });
+
+  it("Fails when cancelling too early (before start_ts)", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    await expectAnchorError(
+      program.methods
+        .cancelDuel()
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "CancelTooEarly"
+    );
+  });
+
+  it("Fails when duel is already Active (opponent joined)", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    // Opponent joins → Active
+    await program.methods
+      .joinDuel()
+      .accounts({
+        opponent: opponent.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([opponent])
+      .rpc({ commitment: "confirmed" });
+
+    await expectAnchorError(
+      program.methods
+        .cancelDuel()
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "NotPending"
+    );
+  });
+
+  it(" Fails when non-creator tries to cancel", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+
+    const now = Math.floor(Date.now() / 1000);
+    const startTime = new anchor.BN(now - 10);
+    const endTime = new anchor.BN(now + DURATIONS.oneWeek);
+
+    await program.methods
+      .createDuel(nonce, stakeAmount, startTime, endTime)
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+
+    await expectAnchorError(
+      program.methods
+        .cancelDuel()
+        .accounts({
+          creator: opponent.publicKey, // opponent tries to cancel creator's duel
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([opponent])
+        .rpc(),
+      "NotOwner"
+    );
+  });
+
+  it("Fails when duel already cancelled (double cancel)", async () => {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+
+    const now = Math.floor(Date.now() / 1000);
+    const startTime = new anchor.BN(now - 10);
+    const endTime = new anchor.BN(now + DURATIONS.oneWeek);
+
+    await program.methods
+      .createDuel(nonce, stakeAmount, startTime, endTime)
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+
+    // First cancel succeeds
+    await program.methods
+      .cancelDuel()
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+
+    // Second cancel must fail
+    await expectAnchorError(
+      program.methods
+        .cancelDuel()
+        .accounts({
+          creator: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "NotPending"
     );
   });
 });
