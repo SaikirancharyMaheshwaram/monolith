@@ -292,3 +292,119 @@ describe("createDuel", () => {
     );
   });
 });
+describe("joinDuel", () => {
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+
+  const program = anchor.workspace.dArena as Program<DArena>;
+  const conn = provider.connection;
+
+  const creator = Keypair.generate();
+  const opponent = Keypair.generate();
+
+  const stakeAmount = new anchor.BN(0.1 * LAMPORTS_PER_SOL);
+
+  before(async () => {
+    console.log("  Program :", program.programId.toBase58());
+
+    await airdropIfNeeded(conn, creator.publicKey, 5 * LAMPORTS_PER_SOL);
+    await airdropIfNeeded(conn, opponent.publicKey, 5 * LAMPORTS_PER_SOL);
+  });
+
+  async function createFreshDuel(
+    staker = creator,
+    stake = stakeAmount,
+    duration = DURATIONS.oneWeek
+  ): Promise<{
+    duelPda: PublicKey;
+    escrowPda: PublicKey;
+    nonce: anchor.BN;
+  }> {
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, staker.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime, endTime } = streakWindow(duration);
+
+    await program.methods
+      .createDuel(nonce, stake, startTime, endTime)
+      .accounts({
+        creator: staker.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([staker])
+      .rpc({ commitment: "confirmed" });
+
+    return { duelPda, escrowPda, nonce };
+  }
+
+  it("Opponent joins duel — state transitions to Active", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    const escrowBefore = await conn.getBalance(escrowPda);
+    const opponentBefore = await conn.getBalance(opponent.publicKey);
+
+    const tx = await program.methods
+      .joinDuel()
+      .accounts({
+        opponent: opponent.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([opponent])
+      .rpc({ commitment: "confirmed" });
+
+    logTransactionResult("joined week duel", tx);
+
+    const duel = await program.account.duel.fetch(duelPda);
+    const escrowAfter = await conn.getBalance(escrowPda);
+
+    //  Duel state
+    expect(duel.status.active).to.not.be.undefined;
+    expect(duel.opponent).to.not.be.null;
+    expect(duel.opponent!.toBase58()).to.equal(
+      opponent.publicKey.toBase58(),
+      "opponent pubkey mismatch"
+    );
+
+    //  Escrow received exact stake
+    expect(escrowAfter - escrowBefore).to.equal(
+      stakeAmount.toNumber(),
+      "escrow should have increased by exactly one stake"
+    );
+
+    // Escrow holds exactly 2x stake
+    expect(escrowAfter).to.be.at.least(
+      stakeAmount.toNumber() * 2,
+      "escrow should hold 2x stake after both players joined"
+    );
+
+    console.log(`  escrow total  : ${escrowAfter / LAMPORTS_PER_SOL} SOL`);
+  });
+
+  it("Opponent joins a 30-day duel", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel(
+      creator,
+      stakeAmount,
+      DURATIONS.oneMonth
+    );
+
+    const tx = await program.methods
+      .joinDuel()
+      .accounts({
+        opponent: opponent.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([opponent])
+      .rpc({ commitment: "confirmed" });
+
+    const duel = await program.account.duel.fetch(duelPda);
+    expect(duel.status.active).to.not.be.undefined;
+    expect(duel.opponent!.toBase58()).to.equal(opponent.publicKey.toBase58());
+    logTransactionResult("30-day duel joined", tx);
+  });
+});
