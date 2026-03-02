@@ -407,4 +407,54 @@ describe("joinDuel", () => {
     expect(duel.opponent!.toBase58()).to.equal(opponent.publicKey.toBase58());
     logTransactionResult("30-day duel joined", tx);
   });
+
+  it("Fails when creator joins own duel", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    await expectAnchorError(
+      program.methods
+        .joinDuel()
+        .accounts({
+          opponent: creator.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([creator])
+        .rpc(),
+      "CannotJoinOwnDuel"
+    );
+  });
+
+  it("Fails when duel already has opponent (AlreadyJoined)", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    await program.methods
+      .joinDuel()
+      .accounts({
+        opponent: opponent.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([opponent])
+      .rpc({ commitment: "confirmed" });
+
+    const thirdParty = Keypair.generate();
+    await airdropIfNeeded(conn, thirdParty.publicKey, 2 * LAMPORTS_PER_SOL);
+
+    await expectAnchorError(
+      program.methods
+        .joinDuel()
+        .accounts({
+          opponent: thirdParty.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([thirdParty])
+        .rpc(),
+      "AlreadyJoined"
+    );
+  });
 });

@@ -30,8 +30,8 @@ impl<'info> JoinDuel<'info> {
         let duel = &mut self.duel;
         let clock = Clock::get()?;
 
-        require!(duel.status == DuelStatus::Pending, DuelError::NotPending);
         require!(duel.opponent.is_none(), DuelError::AlreadyJoined);
+        require!(duel.status == DuelStatus::Pending, DuelError::NotPending);
         require!(
             self.opponent.key() != duel.creator,
             DuelError::CannotJoinOwnDuel
