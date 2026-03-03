@@ -1,11 +1,12 @@
 use anchor_lang::prelude::*;
 mod constants;
 mod error;
+mod helper;
 mod instructions;
 mod state;
 mod utils;
-
 use crate::instructions::*;
+use crate::state::UserResult;
 
 declare_id!("Hh9ZPWeXuszeX27sUyxBNgL4bHQb6gKo98osWqAkFnZB");
 
@@ -33,5 +34,9 @@ pub mod d_arena {
 
     pub fn cancel_duel(ctx: Context<CancelDuel>) -> Result<()> {
         ctx.accounts.handler()
+    }
+
+    pub fn settle_duel(ctx: Context<SettleDuel>, result: UserResult) -> Result<()> {
+        ctx.accounts.handler(result, &ctx.bumps)
     }
 }

@@ -534,7 +534,6 @@ describe("cancelDuel", () => {
       .rpc({ commitment: "confirmed" });
 
     const duel = await program.account.duel.fetch(duelPda);
-    const creatorAfter = await conn.getBalance(creator.publicKey);
     const escrowAfter = await conn.getBalance(escrowPda);
 
     expect(duel.status.cancelled).to.not.be.undefined;

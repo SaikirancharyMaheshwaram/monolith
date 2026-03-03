@@ -39,3 +39,12 @@ pub struct Duel {
     pub duel_bump: u8,
     pub escrow_bump: u8,
 }
+
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub enum UserResult {
+    Winner = 0,
+    Loser = 1,
+    Draw = 2,
+    BothLost = 3,
+}

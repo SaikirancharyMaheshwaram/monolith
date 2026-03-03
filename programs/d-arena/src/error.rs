@@ -38,4 +38,6 @@ pub enum DuelError {
     EscrowBalanceMismatch,
     #[msg("Cannot cancel before duel start_time has passed")]
     CancelTooEarly,
+    #[msg("Treasury account does not match config")]
+    InvalidTreasury,
 }
