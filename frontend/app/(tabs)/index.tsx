@@ -9,17 +9,22 @@ import { Link } from "expo-router";
 import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useWalletStore } from "@/stores/use-wallet-store";
 export default function HomeScreen() {
-  const tasks = useQuery(api.tasks.get);
+  const isDevnet = useWalletStore((s) => s.isDevnet);
+
+  const RPC = isDevnet
+    ? "https://api.devnet.solana.com"
+    : "https://api.mainnet-beta.solana.com";
+
   return (
     <SafeAreaView style={{ paddingHorizontal: 10 }}>
       <ThemedText>Hello</ThemedText>
-
-      <ThemedView>
-        {tasks?.map(({ _id, text }) => (
-          <ThemedText key={_id}>{text}</ThemedText>
-        ))}
-      </ThemedView>
+      {isDevnet && (
+        <ThemedView>
+          <ThemedText>🔧 DEVNET</ThemedText>
+        </ThemedView>
+      )}
     </SafeAreaView>
   );
 }
