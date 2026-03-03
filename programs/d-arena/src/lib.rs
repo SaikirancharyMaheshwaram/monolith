@@ -4,11 +4,10 @@ mod error;
 mod helper;
 mod instructions;
 mod state;
-mod utils;
 use crate::instructions::*;
 use crate::state::UserResult;
 
-declare_id!("Hh9ZPWeXuszeX27sUyxBNgL4bHQb6gKo98osWqAkFnZB");
+declare_id!("CHaNEYpw943hmsT5hWTv8cbuMGhNBWAaMwbD5hFT9uTp");
 
 #[program]
 pub mod d_arena {
