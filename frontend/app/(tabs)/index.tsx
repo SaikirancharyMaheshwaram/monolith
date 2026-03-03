@@ -10,12 +10,15 @@ import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useWalletStore } from "@/stores/use-wallet-store";
+import { useWallet } from "@/lib/use-wallet";
+import { ConnectButton } from "@/components/ConnectButton";
 export default function HomeScreen() {
   const isDevnet = useWalletStore((s) => s.isDevnet);
 
   const RPC = isDevnet
     ? "https://api.devnet.solana.com"
     : "https://api.mainnet-beta.solana.com";
+  const wallet = useWallet();
 
   return (
     <SafeAreaView style={{ paddingHorizontal: 10 }}>
@@ -23,6 +26,13 @@ export default function HomeScreen() {
       {isDevnet && (
         <ThemedView>
           <ThemedText>🔧 DEVNET</ThemedText>
+          <ConnectButton
+            connected={wallet.connected}
+            connecting={wallet.connecting}
+            publicKey={wallet.publicKey?.toBase58() ?? null}
+            onConnect={wallet.connect}
+            onDisconnect={wallet.disconnect}
+          />
         </ThemedView>
       )}
     </SafeAreaView>
