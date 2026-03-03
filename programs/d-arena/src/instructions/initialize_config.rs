@@ -40,13 +40,14 @@ impl<'info> InitializeConfig<'info> {
     ) -> Result<()> {
         let config = &mut self.config;
 
-        config.admin = self.admin.key();
-        config.server_authority = Pubkey::new_from_array(backend_pubkey);
-        config.treasury = treasury;
-        config.backend_pubkey = backend_pubkey;
-        config.fee_bps = fee_bps;
-        config.bump = bumps.config;
-
+        config.set_inner(Config {
+            admin: self.admin.key(),
+            server_authority: Pubkey::new_from_array(backend_pubkey),
+            treasury,
+            backend_pubkey,
+            fee_bps,
+            bump: bumps.config,
+        });
         msg!(
             "Config initialized | admin: {} | treasury: {} | fee_bps: {}",
             config.admin,

@@ -6,6 +6,7 @@ import {
   airdropIfNeeded,
   DURATIONS,
   expectAnchorError,
+  getConfigPda,
   getDuelPda,
   getEscrowPda,
   getNonce,
@@ -29,9 +30,12 @@ describe("createDuel", () => {
   // Shared state across tests
   let duelPda: PublicKey;
   let escrowPda: PublicKey;
+  let programDataAddress: PublicKey;
+  let configPda: PublicKey;
   const duelNonce = new anchor.BN(1);
   const stakeAmount = new anchor.BN(0.1 * LAMPORTS_PER_SOL);
-
+  const serverKP = Keypair.generate();
+  const treasury = new PublicKey("treynHHxg2ftG3Hzn5dypVZX593Yss6uU54puVE614D");
   // Timestamps
   const now = Math.floor(Date.now() / 1000);
   const { startTime, endTime } = streakWindow(DURATIONS.oneWeek);
@@ -43,12 +47,71 @@ describe("createDuel", () => {
     await airdropIfNeeded(conn, opponent.publicKey, 0.02 * LAMPORTS_PER_SOL);
 
     [duelPda] = getDuelPda(program, creator.publicKey, duelNonce);
-    [escrowPda] = getEscrowPda(program, duelPda);
 
+    [escrowPda] = getEscrowPda(program, duelPda);
+    [configPda] = getConfigPda(program, duelPda);
+
+    [programDataAddress] = PublicKey.findProgramAddressSync(
+      [program.programId.toBytes()],
+      new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111") // BPF loader
+    );
     console.log("  Creator  :", creator.publicKey.toBase58());
     console.log("  Opponent :", opponent.publicKey.toBase58());
     console.log("  Duel PDA :", duelPda.toBase58());
     console.log("  Escrow   :", escrowPda.toBase58(), "\n");
+  });
+
+  it("Fails when non-upgrade-authority tries to initialize", async () => {
+    const notOwner = Keypair.generate();
+    await airdropIfNeeded(conn, notOwner.publicKey, 2 * LAMPORTS_PER_SOL);
+
+    const [programDataAddress] = PublicKey.findProgramAddressSync(
+      [program.programId.toBytes()],
+      new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111")
+    );
+
+    await expectAnchorError(
+      program.methods
+        .initialzeConfig(
+          Array.from(serverKP.publicKey.toBytes()),
+          treasury,
+          500
+        )
+        .accounts({
+          admin: notOwner.publicKey, // NOT upgrade authority
+          config: configPda,
+          systemProgram: SYSTEM_PROGRAM,
+          thisProgram: program.programId,
+          programData: programDataAddress,
+        })
+        .signers([notOwner])
+        .rpc(),
+      "UpgradeAuthorityMismatch"
+    );
+  });
+
+  it("Initializes config — only upgrade authority", async () => {
+    const tx = await program.methods
+      .initialzeConfig(
+        Array.from(serverKP.publicKey.toBytes()),
+        treasury,
+        500 // 5% fee
+      )
+      .accounts({
+        admin: provider.wallet.publicKey, // must be upgrade authority
+        config: configPda,
+        systemProgram: SYSTEM_PROGRAM,
+        thisProgram: program.programId,
+        programData: programDataAddress,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    const config = await program.account.config.fetch(configPda);
+    expect(config.admin.toBase58()).to.equal(
+      provider.wallet.publicKey.toBase58()
+    );
+
+    logTransactionResult("initialize config", tx);
   });
 
   it("  Creates a 7-day duel", async () => {
@@ -508,6 +571,8 @@ describe("cancelDuel", () => {
     const startTime = new anchor.BN(now - 10); // start_ts in the past
     const endTime = new anchor.BN(now + DURATIONS.oneWeek); // valid end_ts
 
+    await new Promise((r) => setTimeout(r, 4000));
+
     await program.methods
       .createDuel(nonce, stakeAmount, startTime, endTime)
       .accounts({
@@ -519,7 +584,6 @@ describe("cancelDuel", () => {
       .signers([creator])
       .rpc({ commitment: "confirmed" });
 
-    const creatorBefore = await conn.getBalance(creator.publicKey);
     const escrowBefore = await conn.getBalance(escrowPda);
 
     const tx = await program.methods

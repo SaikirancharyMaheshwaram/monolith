@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { BN, Program } from "@coral-xyz/anchor";
 import { DArena } from "../../target/types/d_arena";
-import { DUEL_SEED, ESCROW_SEED } from "./constant";
+import { CONFIG_SEED, DUEL_SEED, ESCROW_SEED } from "./constant";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "crypto";
 import { expect } from "chai";
@@ -37,6 +37,12 @@ export function getEscrowPda(
     [ESCROW_SEED, duelPda.toBuffer()],
     program.programId
   );
+}
+export function getConfigPda(
+  program: Program<DArena>,
+  duelPda: PublicKey
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([CONFIG_SEED], program.programId);
 }
 
 export function getNonce(): anchor.BN {
