@@ -39,4 +39,14 @@ pub mod d_arena {
     pub fn settle_duel(ctx: Context<SettleDuel>, result: UserResult) -> Result<()> {
         ctx.accounts.handler(result, &ctx.bumps)
     }
+
+    pub fn initialze_config(
+        ctx: Context<InitializeConfig>,
+        backend_pubkey: [u8; 32],
+        treasury: Pubkey,
+        fee_bps: u16,
+    ) -> Result<()> {
+        ctx.accounts
+            .handler(backend_pubkey, treasury, fee_bps, &ctx.bumps)
+    }
 }

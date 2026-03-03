@@ -40,4 +40,8 @@ pub enum DuelError {
     CancelTooEarly,
     #[msg("Treasury account does not match config")]
     InvalidTreasury,
+    #[msg("Program data account does not match this program")]
+    ProgramDataMismatch,
+    #[msg("Signer is not the program upgrade authority")]
+    UpgradeAuthorityMismatch,
 }
