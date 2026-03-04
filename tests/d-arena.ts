@@ -1033,4 +1033,66 @@ describe("settleDuel", () => {
     const escrowAfter = await conn.getBalance(escrowPda);
     expect(escrowBefore - escrowAfter).to.equal(total);
   });
+
+  it("Fails when signature from wrong server key", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+    const duel = await program.account.duel.fetch(duelPda);
+    const duelId = new anchor.BN(duel.duelId);
+    const nonce = new anchor.BN(duel.settlementNonce);
+
+    // Build message correctly
+    const message = buildMessage(
+      duelId,
+      creator.publicKey,
+      UserResult[0], // Winner
+      nonce
+    );
+
+    // ❌ Sign with WRONG key (not SERVER_KEYPAIR)
+    const wrongKeypair = Keypair.generate();
+    const signature = nacl.sign.detached(message, wrongKeypair.secretKey);
+
+    const ed25519Ix = Ed25519Program.createInstructionWithPublicKey({
+      publicKey: wrongKeypair.publicKey.toBytes(), // Wrong pubkey
+      message,
+      signature,
+    });
+
+    const settleIx = await program.methods
+      .settleDuel({ winner: {} } as any)
+      .accounts({
+        user: creator.publicKey,
+        duel: duelPda,
+        config: configPda,
+        escrow: escrowPda,
+        creatorAccount: creator.publicKey,
+        opponentAccount: opponent.publicKey,
+        creatorVault,
+        opponentVault,
+        treasury: TREASURY,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .instruction();
+
+    const tx = new Transaction()
+      .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+      .add(ed25519Ix)
+      .add(settleIx);
+
+    // Should fail with InvalidSignature
+    await expectAnchorError(
+      program.methods
+        .settleDuel()
+        .accounts({
+          creator: opponent.publicKey,
+          duel: duelPda,
+          escrow: escrowPda,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([opponent])
+        .rpc(),
+      "NotOwner"
+    );
+  });
 });

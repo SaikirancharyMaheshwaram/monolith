@@ -135,7 +135,7 @@ impl<'info> SettleDuel<'info> {
                     self.opponent_account.to_account_info()
                 };
 
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     winner_acc.clone(),
@@ -144,7 +144,7 @@ impl<'info> SettleDuel<'info> {
                 )?;
 
                 // 5% -> treasury
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     self.treasury.to_account_info().clone(),
@@ -158,7 +158,7 @@ impl<'info> SettleDuel<'info> {
                 } else {
                     (&mut self.opponent_vault, bumps.opponent_vault)
                 };
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     loser_vault.to_account_info().clone(),
@@ -172,6 +172,23 @@ impl<'info> SettleDuel<'info> {
                     .ok_or(DuelError::Overflow)?;
                 loser_vault.is_locked = true;
                 loser_vault.bump = vault_bump;
+
+                // Unlock winner's vault if they had a previous loss
+                // If winner previously lost a duel, their vault was locked
+                // Winning this duel unlocks it — they can now redeem
+                let winner_vault = if winner == creator {
+                    &mut self.creator_vault
+                } else {
+                    &mut self.opponent_vault
+                };
+                if winner_vault.locked_lamports > 0 && winner_vault.is_locked {
+                    winner_vault.is_locked = false;
+                    msg!(
+                        "Winner vault unlocked | owner: {} | redeemable: {} lamports",
+                        winner,
+                        winner_vault.locked_lamports,
+                    );
+                }
 
                 duel.winner = Some(winner);
                 msg!(
@@ -189,14 +206,14 @@ impl<'info> SettleDuel<'info> {
             UserResult::Draw => {
                 let each = bps(total, REFUND_BPS)?;
 
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     self.creator_account.to_account_info(),
                     each,
                     signer_seeds,
                 )?;
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     self.opponent_account.to_account_info(),
@@ -212,7 +229,7 @@ impl<'info> SettleDuel<'info> {
                 let each = bps(total, REFUND_BPS)?;
 
                 // Creator stake -> creator vault
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     self.creator_vault.to_account_info(),
@@ -230,7 +247,7 @@ impl<'info> SettleDuel<'info> {
 
                 // Opponent stake -> opponent vault
 
-                transfer_lamports(
+                transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),
                     self.opponent_vault.to_account_info(),
@@ -249,6 +266,7 @@ impl<'info> SettleDuel<'info> {
                 msg!("BothLost | each vault: {} lamports locked", each);
             }
         }
+
         // Finalize
         duel.status = DuelStatus::Settled;
 
@@ -263,7 +281,7 @@ impl<'info> SettleDuel<'info> {
     }
 }
 
-pub fn transfer_lamports<'info>(
+pub fn transfer_from_escrow<'info>(
     account: AccountInfo<'info>,
     from: AccountInfo<'info>,
     to: AccountInfo<'info>,
