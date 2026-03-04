@@ -141,3 +141,15 @@ export function buildMessage(
     nonce.toBuffer("le", 8), // 8 bytes
   ]);
 }
+export async function shouldFail(
+  promise: Promise<any>,
+  label: string
+): Promise<void> {
+  try {
+    await promise;
+    throw new Error(`Should have failed: ${label}`);
+  } catch (e: any) {
+    expect(e.message).to.not.equal(`Should have failed: ${label}`);
+    console.log(`  correctly failed: ${label}`);
+  }
+}

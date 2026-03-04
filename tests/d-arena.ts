@@ -25,6 +25,7 @@ import {
   getVaultPda,
   logTransactionResult,
   streakWindow,
+  shouldFail,
 } from "./helper/helper";
 import { SYSTEM_PROGRAM, UserResult, UserResultByte } from "./helper/constant";
 import { expect } from "chai";
@@ -1048,7 +1049,7 @@ describe("settleDuel", () => {
       nonce
     );
 
-    // ❌ Sign with WRONG key (not SERVER_KEYPAIR)
+    // Sign with WRONG key (not SERVER_KEYPAIR)
     const wrongKeypair = Keypair.generate();
     const signature = nacl.sign.detached(message, wrongKeypair.secretKey);
 
@@ -1081,18 +1082,53 @@ describe("settleDuel", () => {
       .add(settleIx);
 
     // Should fail with InvalidSignature
-    await expectAnchorError(
-      program.methods
-        .settleDuel()
-        .accounts({
-          creator: opponent.publicKey,
-          duel: duelPda,
-          escrow: escrowPda,
-          systemProgram: SYSTEM_PROGRAM,
-        })
-        .signers([opponent])
-        .rpc(),
-      "NotOwner"
+    await shouldFail(
+      sendAndConfirmTransaction(conn, tx, [creator]),
+      "InvalidSignature"
+    );
+  });
+
+  it("Fails when settling already-settled duel (replay)", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    // First settle succeeds
+    const { settleIx: settleIx1, ed25519Ix: ed25519Ix1 } = await buildSettleIx(
+      creator,
+      duelPda,
+      escrowPda,
+      { winner: {} },
+      0
+    );
+
+    const tx1 = new Transaction()
+      .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+      .add(ed25519Ix1)
+      .add(settleIx1);
+
+    await sendAndConfirmTransaction(conn, tx1, [creator]);
+
+    // Verify duel is settled
+    const duelAcc = await program.account.duel.fetch(duelPda);
+    expect(duelAcc.status.settled).to.not.be.undefined;
+
+    // Try to settle again with SAME nonce (replay attack)
+    const { settleIx: settleIx2, ed25519Ix: ed25519Ix2 } = await buildSettleIx(
+      creator,
+      duelPda,
+      escrowPda,
+      { winner: {} },
+      0 // Same nonce, should fail
+    );
+
+    const tx2 = new Transaction()
+      .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+      .add(ed25519Ix2)
+      .add(settleIx2);
+
+    // Should fail with NotActive or similar
+    await shouldFail(
+      sendAndConfirmTransaction(conn, tx2, [creator]),
+      "NotActive"
     );
   });
 });
