@@ -1,5 +1,5 @@
 use crate::error::DuelError;
-use anchor_lang::{prelude::*, system_program::Transfer};
+use anchor_lang::prelude::*;
 
 pub const DUEL_SEED: &[u8] = b"duel";
 pub const ESCROW_SEED: &[u8] = b"escrow";

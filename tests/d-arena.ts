@@ -11,6 +11,7 @@ import {
   sendAndConfirmTransaction,
   SYSVAR_INSTRUCTIONS_PUBKEY,
   Transaction,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import {
   fundIfNeeded,
@@ -29,8 +30,8 @@ import { SYSTEM_PROGRAM, UserResult, UserResultByte } from "./helper/constant";
 import { expect } from "chai";
 import fs, { readFileSync } from "fs";
 
-const kpPath = "keypair.json";
-const SERVER_KEYPAIR = Keypair.fromSecretKey(
+const kpPath = "wallet.json";
+export const SERVER_KEYPAIR = Keypair.fromSecretKey(
   Uint8Array.from(JSON.parse(readFileSync(kpPath, "utf8")))
 );
 console.log("SERVER_KEYPAIR:", SERVER_KEYPAIR.publicKey.toBase58());
@@ -671,7 +672,7 @@ describe("cancelDuel", () => {
 
 // ----------------------------- settleDuel -----------------------------
 describe("settleDuel", () => {
-  const stakeAmount = new anchor.BN(0.2 * LAMPORTS_PER_SOL);
+  const stakeAmount = new anchor.BN(0.05 * LAMPORTS_PER_SOL);
 
   async function createFreshDuel(
     staker = creator,
@@ -683,7 +684,7 @@ describe("settleDuel", () => {
     const [escrowPda] = getEscrowPda(program, duelPda);
     const { startTime, endTime } = streakWindow(duration);
 
-    await program.methods
+    const createTx = await program.methods
       .createDuel(nonce, stake, startTime, endTime)
       .accounts({
         creator: staker.publicKey,
@@ -694,7 +695,7 @@ describe("settleDuel", () => {
       .signers([staker])
       .rpc({ commitment: "confirmed" });
 
-    await program.methods
+    const joinTx = await program.methods
       .joinDuel()
       .accounts({
         opponent: opponent.publicKey,
@@ -705,57 +706,44 @@ describe("settleDuel", () => {
       .signers([opponent])
       .rpc({ commitment: "confirmed" });
 
+    logTransactionResult("created duel:", createTx);
+    logTransactionResult("joined duel:", joinTx);
     return { duelPda, escrowPda };
   }
-
-  it("Creator wins — 70/25/5 split correct", async () => {
-    const { duelPda, escrowPda } = await createFreshDuel();
+  // HELPER: Build settleDuel instruction
+  async function buildSettleIx(
+    user: Keypair,
+    duelPda: PublicKey,
+    escrowPda: PublicKey,
+    resultEnum: any, // e.g., { winner: {} }
+    resultByte: number // e.g., 0 for Winner
+  ): Promise<{
+    settleIx: TransactionInstruction;
+    message: Buffer;
+    ed25519Ix: TransactionInstruction;
+  }> {
     const duel = await program.account.duel.fetch(duelPda);
     const duelId = new anchor.BN(duel.duelId);
     const nonce = new anchor.BN(duel.settlementNonce);
 
-    const configAcc = await program.account.config.fetch(configPda);
-    const publicKey = new PublicKey(new Uint8Array(configAcc.backendPubkey));
+    // Build message: [duel_id LE][user_pubkey][result_u8][nonce LE]
+    const message = buildMessage(duelId, user.publicKey, resultByte, nonce);
 
-    console.log("configAcc", publicKey);
-
-    const creatorBefore = await conn.getBalance(creator.publicKey);
-    const treasuryBefore = await conn.getBalance(TREASURY);
-    const escrowBefore = await conn.getBalance(escrowPda);
-
-    const resultEnum = { winner: {} }; // for Anchor method arg
-    const resultByte = 0; // Winner enum index
-
-    // const message = Buffer.concat([
-    //   new anchor.BN(duel.duelId).toArrayLike(Buffer, "le", 8),
-    //   creator.publicKey.toBuffer(), // must be same as `user` account
-    //   Buffer.from([resultByte]),
-    //   new anchor.BN(duel.settlementNonce).toArrayLike(Buffer, "le", 8),
-    // ]);
-
-    const message = buildMessage(
-      duelId,
-      creator.publicKey,
-      UserResult[UserResultByte.winner],
-      nonce
-    );
+    // Sign with server key
     const signature = nacl.sign.detached(message, SERVER_KEYPAIR.secretKey);
 
+    // Ed25519 verification instruction
     const ed25519Ix = Ed25519Program.createInstructionWithPublicKey({
       publicKey: SERVER_KEYPAIR.publicKey.toBytes(),
       message,
       signature,
     });
-    console.log(
-      "SERVER_KEYPAIR.publicKey",
-      SERVER_KEYPAIR.publicKey.toBase58()
-    );
 
-    const settleResult = { winner: {} };
+    // SettleDuel instruction
     const settleIx = await program.methods
       .settleDuel(resultEnum as any)
       .accounts({
-        user: creator.publicKey,
+        user: user.publicKey,
         duel: duelPda,
         config: configPda,
         escrow: escrowPda,
@@ -769,25 +757,46 @@ describe("settleDuel", () => {
       })
       .instruction();
 
-    console.log("ix0:", ed25519Ix.programId.toBase58());
-    console.log("ix1:", settleIx.programId.toBase58());
+    return { settleIx, message, ed25519Ix };
+  }
+
+  it("Creator wins — 70/25/5 split correct", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+
+    const total = stakeAmount.toNumber() * 2;
+
+    const expectedWinner = Math.floor((total * 7000) / 10000); // 70%
+    const expectedLoser = Math.floor((total * 2500) / 10000); // 25%
+    const expectedTreas = Math.floor((total * 500) / 10000); // 5%
+
+    console.log("─── Expected Distribution ───");
+    console.log(`  Total pot : ${total / LAMPORTS_PER_SOL} SOL`);
+    console.log(`  Winner 70%: ${expectedWinner / LAMPORTS_PER_SOL} SOL`);
+    console.log(`  Loser  25%: ${expectedLoser / LAMPORTS_PER_SOL} SOL`);
+    console.log(`  Treasury5%: ${expectedTreas / LAMPORTS_PER_SOL} SOL`);
+
+    const creatorBefore = await conn.getBalance(creator.publicKey);
+    const treasuryBefore = await conn.getBalance(TREASURY);
+    const escrowBefore = await conn.getBalance(escrowPda);
+
+    const { settleIx, ed25519Ix } = await buildSettleIx(
+      creator,
+      duelPda,
+      escrowPda,
+      { winner: {} },
+      0 // Winner enum index
+    );
 
     const tx = new Transaction()
       .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
       .add(ed25519Ix)
       .add(settleIx);
-    let txSig: string;
-    try {
-      txSig = await sendAndConfirmTransaction(conn, tx, [creator]);
-    } catch (e: any) {
-      if (typeof e?.getLogs === "function") {
-        console.log(await e.getLogs());
-      }
-      throw e;
-    }
+
+    let txSig = await sendAndConfirmTransaction(conn, tx, [creator]);
 
     logTransactionResult("settle tx", txSig);
 
+    //  Fetch state AFTER settle
     const duelAcc = await program.account.duel.fetch(duelPda);
     const opponentVaultAcc = await program.account.redemptionVault.fetch(
       opponentVault
@@ -796,15 +805,232 @@ describe("settleDuel", () => {
     const treasuryAfter = await conn.getBalance(TREASURY);
     const escrowAfter = await conn.getBalance(escrowPda);
 
-    // Keep your full assertions here if you already had exact amount checks.
-    expect(duelAcc.status.settled).to.not.be.undefined;
-    expect(creatorAfter).to.be.greaterThan(
-      creatorBefore - 0.02 * LAMPORTS_PER_SOL
+    console.log("─── Actual Balances ───");
+    console.log(`  creator  before: ${creatorBefore / LAMPORTS_PER_SOL} SOL`);
+    console.log(`  creator  after : ${creatorAfter / LAMPORTS_PER_SOL} SOL`);
+    console.log(
+      `  creator  gained: ${
+        (creatorAfter - creatorBefore) / LAMPORTS_PER_SOL
+      } SOL`
     );
-    expect(treasuryAfter).to.be.greaterThanOrEqual(treasuryBefore);
-    expect(escrowAfter).to.be.lessThan(escrowBefore);
+    console.log(`  treasury before: ${treasuryBefore / LAMPORTS_PER_SOL} SOL`);
+    console.log(`  treasury after : ${treasuryAfter / LAMPORTS_PER_SOL} SOL`);
+    console.log(
+      `  treasury gained: ${
+        (treasuryAfter - treasuryBefore) / LAMPORTS_PER_SOL
+      } SOL`
+    );
+    console.log(`  escrow   before: ${escrowBefore / LAMPORTS_PER_SOL} SOL`);
+    console.log(`  escrow   after : ${escrowAfter / LAMPORTS_PER_SOL} SOL`);
+    console.log(
+      `  vault    locked: ${
+        opponentVaultAcc.lockedLamports.toNumber() / LAMPORTS_PER_SOL
+      } SOL`
+    );
+    // Status must be Settled
+    expect(duelAcc.status.settled).to.not.be.undefined;
+
+    // Winner must be creator
+    expect(duelAcc.winner!.toBase58()).to.equal(
+      creator.publicKey.toBase58(),
+      "winner should be creator"
+    );
+
+    // Nonce must have incremented
+    expect(duelAcc.settlementNonce.toNumber()).to.equal(1, "nonce should be 1");
+
+    //  OPPONENT REDEMPTION VAULT — locked 25%
+    // Vault owner must be opponent
+    expect(opponentVaultAcc.owner.toBase58()).to.equal(
+      opponent.publicKey.toBase58(),
+      "vault owner should be opponent"
+    );
+
+    // Vault must be locked
+    expect(opponentVaultAcc.isLocked).to.be.true;
+
+    //  TREASURY — received 5%
+
+    expect(treasuryAfter - treasuryBefore).to.equal(
+      expectedTreas,
+      `treasury should receive ${expectedTreas / LAMPORTS_PER_SOL} SOL (5%)`
+    );
+
+    // Escrow lost exactly total (winner + loser + treasury)
+    expect(escrowBefore - escrowAfter).to.equal(
+      total,
+      "escrow should be drained by exactly total pot"
+    );
+
+    // Escrow should be empty (or just rent exempt minimum)
+    expect(escrowAfter).to.equal(0, "escrow should be fully drained");
+  });
+
+  it("Opponent wins — 70/25/5 split correct", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+    const duel = await program.account.duel.fetch(duelPda);
+    const total = duel.stakedAmount.toNumber() * 2;
+    const expectedWinner = Math.floor((total * 7000) / 10000);
+    const expectedLoser = Math.floor((total * 2500) / 10000);
+    const expectedTreas = Math.floor((total * 500) / 10000);
+
+    const opponentBefore = await conn.getBalance(opponent.publicKey);
+    const treasuryBefore = await conn.getBalance(TREASURY);
+    const escrowBefore = await conn.getBalance(escrowPda);
+
+    // Opponent calls settleDuel with Winner result
+    const { settleIx, ed25519Ix } = await buildSettleIx(
+      opponent, // opponent is the caller
+      duelPda,
+      escrowPda,
+      { winner: {} },
+      0 // Winner enum index
+    );
+
+    const tx = new Transaction()
+      .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+      .add(ed25519Ix)
+      .add(settleIx);
+
+    const txSig = await sendAndConfirmTransaction(conn, tx, [opponent]);
+    logTransactionResult("settle tx", txSig);
+
+    const duelAcc = await program.account.duel.fetch(duelPda);
+    expect(duelAcc.status.settled).to.not.be.undefined;
+    expect(duelAcc.winner!.toBase58()).to.equal(
+      opponent.publicKey.toBase58(),
+      "winner should be opponent"
+    );
+
+    // Opponent received 70% directly to wallet
+    const opponentAfter = await conn.getBalance(opponent.publicKey);
+    expect(opponentAfter - opponentBefore).to.be.at.least(
+      expectedWinner - 10000, // buffer for fees
+      "opponent should receive 70% of pot"
+    );
+
+    // Creator's 25% locked in creator vault
+    const creatorVaultAcc = await program.account.redemptionVault.fetch(
+      creatorVault
+    );
+    expect(creatorVaultAcc.isLocked).to.be.true;
+    expect(creatorVaultAcc.lockedLamports.toNumber()).to.equal(expectedLoser);
+
+    // Treasury received 5%
+    const treasuryAfter = await conn.getBalance(TREASURY);
+    expect(treasuryAfter - treasuryBefore).to.equal(expectedTreas);
+
+    console.log(
+      `Opponent won: gained ${
+        (opponentAfter - opponentBefore) / LAMPORTS_PER_SOL
+      } SOL`
+    );
+  });
+
+  it(" Draw — both get 50% refund, no fees", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+    const duel = await program.account.duel.fetch(duelPda);
+    const total = duel.stakedAmount.toNumber() * 2;
+    const eachRefund = Math.floor((total * 5000) / 10000); // 50% each
+
+    const creatorBefore = await conn.getBalance(creator.publicKey);
+    const opponentBefore = await conn.getBalance(opponent.publicKey);
+    const escrowBefore = await conn.getBalance(escrowPda);
+
+    // Creator calls settleDuel with Draw result
+    const { settleIx, ed25519Ix } = await buildSettleIx(
+      creator,
+      duelPda,
+      escrowPda,
+      { draw: {} },
+      2 // Draw enum index
+    );
+
+    const tx = new Transaction()
+      .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+      .add(ed25519Ix)
+      .add(settleIx);
+
+    const txSig = await sendAndConfirmTransaction(conn, tx, [creator]);
+    logTransactionResult("settled tx:", txSig);
+
+    const duelAcc = await program.account.duel.fetch(duelPda);
+    expect(duelAcc.status.settled).to.not.be.undefined;
+
+    // Both received ~50% back to their wallets
+    const creatorAfter = await conn.getBalance(creator.publicKey);
+    const opponentAfter = await conn.getBalance(opponent.publicKey);
+
+    expect(creatorAfter - creatorBefore).to.be.at.least(
+      eachRefund - 10000,
+      "creator should receive ~50% refund"
+    );
+    expect(opponentAfter - opponentBefore).to.be.at.least(
+      eachRefund - 10000,
+      "opponent should receive ~50% refund"
+    );
+
+    // Treasury should NOT receive fees on draw
+    const treasuryAfter = await conn.getBalance(TREASURY);
+    expect(treasuryAfter).to.equal(
+      await conn.getBalance(TREASURY), // unchanged
+      "treasury should not receive fees on draw"
+    );
+
+    // Escrow drained
+    const escrowAfter = await conn.getBalance(escrowPda);
+    expect(escrowBefore - escrowAfter).to.equal(total);
+
+    console.log(` Draw: both refunded ${eachRefund / LAMPORTS_PER_SOL} SOL`);
+  });
+
+  it(" BothLost — both get 50% locked in redemption vaults", async () => {
+    const { duelPda, escrowPda } = await createFreshDuel();
+    const duel = await program.account.duel.fetch(duelPda);
+    const total = duel.stakedAmount.toNumber() * 2;
+
+    const escrowBefore = await conn.getBalance(escrowPda);
+
+    // Creator calls settleDuel with BothLost result
+    const { settleIx, ed25519Ix } = await buildSettleIx(
+      creator,
+      duelPda,
+      escrowPda,
+      { bothLost: {} },
+      3
+    );
+
+    const tx = new Transaction()
+      .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+      .add(ed25519Ix)
+      .add(settleIx);
+
+    const txSig = await sendAndConfirmTransaction(conn, tx, [creator]);
+    logTransactionResult("settle tx:", txSig);
+
+    const duelAcc = await program.account.duel.fetch(duelPda);
+    expect(duelAcc.status.settled).to.not.be.undefined;
+
+    // Both vaults locked with 50% each
+    const creatorVaultAcc = await program.account.redemptionVault.fetch(
+      creatorVault
+    );
+    const opponentVaultAcc = await program.account.redemptionVault.fetch(
+      opponentVault
+    );
+
+    expect(creatorVaultAcc.isLocked).to.be.true;
+    expect(creatorVaultAcc.owner.toBase58()).to.equal(
+      creator.publicKey.toBase58()
+    );
+
+    expect(opponentVaultAcc.isLocked).to.be.true;
     expect(opponentVaultAcc.owner.toBase58()).to.equal(
       opponent.publicKey.toBase58()
     );
+
+    // Escrow drained
+    const escrowAfter = await conn.getBalance(escrowPda);
+    expect(escrowBefore - escrowAfter).to.equal(total);
   });
 });
