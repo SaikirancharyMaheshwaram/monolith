@@ -11,7 +11,7 @@ interface Props {
   connected: boolean;
   connecting: boolean;
   publicKey: string | null;
-  onConnect: () => void;
+  onConnect: () => Promise<unknown> | unknown;
   onDisconnect: () => void;
 }
 
@@ -22,6 +22,12 @@ export function ConnectButton({
   onConnect,
   onDisconnect,
 }: Props) {
+  const handleConnectPress = () => {
+    Promise.resolve(onConnect()).catch((error) => {
+      console.error("Wallet connect action failed:", error);
+    });
+  };
+
   if (connecting) {
     return (
       <View style={[styles.button, styles.connecting]}>
@@ -49,7 +55,7 @@ export function ConnectButton({
   return (
     <TouchableOpacity
       style={[styles.button, styles.disconnected]}
-      onPress={onConnect}
+      onPress={handleConnectPress}
     >
       <Ionicons name="wallet-outline" size={18} color="#fff" />
       <Text style={styles.buttonText}>Connect Wallet</Text>

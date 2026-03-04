@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import {
   transact,
   Web3MobileWallet,
@@ -11,11 +11,11 @@ import {
   LAMPORTS_PER_SOL,
   clusterApiUrl,
 } from "@solana/web3.js";
-import { useWalletStore } from "@/stores/use-wallet-store";
-import { ConvexReactClient, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import bs58 from "bs58";
-import { saveToken } from "./token";
+import { clearToken, saveToken } from "./token";
+import { useWalletStore } from "@/stores/use-wallet-store";
 
 const APP_IDENTITY = {
   name: "SolScan",
@@ -23,185 +23,213 @@ const APP_IDENTITY = {
   icon: "favicon.ico",
 };
 
+function isWalletRequestDeclined(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const err = error as { code?: number | string; message?: string };
+  const code = typeof err.code === "string" ? Number(err.code) : err.code;
+  if (code === -3) return true;
+
+  const message = err.message?.toLowerCase() ?? "";
+  return (
+    message.includes("request declined") ||
+    message.includes("request rejected") ||
+    message.includes("user rejected")
+  );
+}
+
 export function useWallet() {
   const [publicKey, setPublicKey] = useState<PublicKey | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const isDevnet = useWalletStore((s) => s.isDevnet);
+  const authTokenRef = useRef<string | null>(null);
+  const connectingRef = useRef(false);
 
   const cluster = isDevnet ? "devnet" : "mainnet-beta";
   const requestNonce = useMutation(api.auth.requestNonce);
   const verifyWallet = useMutation(api.auth.verifyWallet);
-  const connection = new Connection(clusterApiUrl(cluster), "confirmed");
+  const connection = useMemo(
+    () => new Connection(clusterApiUrl(cluster), "confirmed"),
+    [cluster],
+  );
 
-  // ============================================
-  // CONNECT — Ask Phantom to authorize our app
-  // ============================================
+  const authorizeWalletSession = useCallback(
+    async (wallet: Web3MobileWallet, address?: string) => {
+      if (authTokenRef.current) {
+        try {
+          const reauth = await wallet.reauthorize({
+            auth_token: authTokenRef.current,
+            identity: APP_IDENTITY,
+          });
+          authTokenRef.current = reauth.auth_token;
+          return reauth;
+        } catch (error) {
+          // Token can expire; fallback to fresh authorize below.
+          if (isWalletRequestDeclined(error)) throw error;
+          authTokenRef.current = null;
+        }
+      }
+
+      const auth = await wallet.authorize({
+        chain: `solana:${cluster}`,
+        identity: APP_IDENTITY,
+        ...(address ? { addresses: [address] } : {}),
+      });
+      authTokenRef.current = auth.auth_token;
+      return auth;
+    },
+    [cluster],
+  );
+
   // const connect = useCallback(async () => {
+  //   if (connectingRef.current) return publicKey;
+
+  //   connectingRef.current = true;
   //   setConnecting(true);
+
   //   try {
   //     const authResult = await transact(async (wallet: Web3MobileWallet) => {
-  //       // This opens Phantom, shows an "Authorize" dialog
-  //       // User taps "Approve" → we get their public key
-  //       const result = await wallet.authorize({
-  //         chain: `solana:${cluster}`,
-  //         identity: APP_IDENTITY,
-  //       });
-  //       return result;
+  //       return await authorizeWalletSession(wallet);
   //     });
 
-  //     // authResult.accounts[0].address is a base64 public key
+  //     const firstAccount = authResult.accounts[0];
+  //     if (!firstAccount) throw new Error("No wallet account returned");
+
   //     const pubkey = new PublicKey(
-  //       Buffer.from(authResult.accounts[0].address, "base64"),
+  //       Buffer.from(firstAccount.address, "base64"),
   //     );
   //     setPublicKey(pubkey);
-  //     await loginWithBackend(pubkey);
+
+  //     const walletAddress = pubkey.toBase58();
+
+  //     const nonce = await requestNonce({ walletAddress });
+  //     const encodedMessage = new TextEncoder().encode(nonce);
+
+  //     const signatures = await transact(async (wallet: Web3MobileWallet) => {
+  //       await authorizeWalletSession(wallet, walletAddress);
+
+  //       return await wallet.signMessages({
+  //         addresses: [walletAddress],
+  //         payloads: [encodedMessage],
+  //       });
+  //     });
+
+  //     if (!signatures[0]) throw new Error("Wallet did not return a signature");
+  //     const signatureBase58 = bs58.encode(signatures[0]);
+
+  //     const { token } = await verifyWallet({
+  //       walletAddress,
+  //       nonce,
+  //       signature: signatureBase58,
+  //     });
+
+  //     await saveToken(token);
+  //     useWalletStore.getState().setAuthenticated(true);
+
   //     return pubkey;
-  //   } catch (error: any) {
-  //     console.error("Connect failed:", error);
+  //   } catch (error) {
+  //     if (isWalletRequestDeclined(error)) {
+  //       setPublicKey(null);
+  //       useWalletStore.getState().setAuthenticated(false);
+  //       return null;
+  //     }
+
+  //     console.error("Connect/Login failed:", error);
   //     throw error;
   //   } finally {
+  //     connectingRef.current = false;
   //     setConnecting(false);
   //   }
-  // }, [cluster]);
+  // }, [
+  //   authorizeWalletSession,
+  //   publicKey,
+  //   requestNonce,
+  //   verifyWallet,
+  // ]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
-
     try {
-      // ------------------------------------------
-      // 1️⃣ First transact session → AUTHORIZE
-      // ------------------------------------------
-      // Mobile Wallet Adapter sessions are NOT persistent.
-      // Each transact call is isolated.
-      // So we must authorize inside each transact block.
       const authResult = await transact(async (wallet: Web3MobileWallet) => {
-        return await wallet.authorize({
+        // This opens Phantom, shows an "Authorize" dialog
+        // User taps "Approve" → we get their public key
+        const result = await wallet.authorize({
           chain: `solana:${cluster}`,
           identity: APP_IDENTITY,
         });
+        return result;
       });
 
+      // authResult.accounts[0].address is a base64 public key
       const pubkey = new PublicKey(
         Buffer.from(authResult.accounts[0].address, "base64"),
       );
-
       setPublicKey(pubkey);
-
-      const walletAddress = pubkey.toBase58();
-
-      // ------------------------------------------
-      // 2️⃣ Request nonce (OUTSIDE transact)
-      // ------------------------------------------
-      // NEVER call backend inside transact.
-      // Keep transact short and wallet-only.
-      const nonce = await requestNonce({ walletAddress });
-
-      const message = `Discipline Arena Login\nNonce: ${nonce}`;
-      const encodedMessage = new TextEncoder().encode(message);
-
-      // ------------------------------------------
-      // 3️⃣ Second transact session → AUTHORIZE + SIGN
-      // ------------------------------------------
-      // auth_token is valid ONLY within a transact session.
-      // So we must re-authorize before signing.
-      const signatures = await transact(async (wallet: Web3MobileWallet) => {
-        await wallet.authorize({
-          chain: `solana:${cluster}`,
-          identity: APP_IDENTITY,
-        });
-
-        return await wallet.signMessages({
-          addresses: [walletAddress],
-          payloads: [encodedMessage],
-        });
-      });
-
-      // signatures[0] is Uint8Array
-      const signatureBase58 = bs58.encode(signatures[0]);
-
-      // ------------------------------------------
-      // 4️⃣ Verify signature with backend
-      // ------------------------------------------
-      const { token } = await verifyWallet({
-        walletAddress,
-        nonce,
-        signature: signatureBase58,
-      });
-
-      // ------------------------------------------
-      // 5️⃣ Store JWT securely
-      // ------------------------------------------
-      await saveToken(token);
-
-      // ------------------------------------------
-      // 6️⃣ Update authentication state
-      // ------------------------------------------
-      useWalletStore.getState().setAuthenticated(true);
-
+      useWalletStore.getState().setStatus("connected");
+      useWalletStore.getState().setPublicKey(pubkey);
       return pubkey;
-    } catch (error) {
-      console.error("Connect/Login failed:", error);
+    } catch (error: any) {
+      console.error("Connect failed:", error);
       throw error;
     } finally {
       setConnecting(false);
     }
-  }, [cluster, requestNonce, verifyWallet]);
-
-  // const loginWithBackend = async (pubkey: PublicKey) => {
-  //   const walletAddress = pubkey.toBase58();
-
-  //   // 1️⃣ Request nonce
-  //   const nonce = await requestNonce({
-  //     walletAddress,
-  //   });
-
-  //   // 2️⃣ Construct EXACT same message backend verifies
-  //   const message = `Discipline Arena Login\nNonce: ${nonce}`;
-  //   const encodedMessage = new TextEncoder().encode(message);
-
-  //   // 3️⃣ Ask wallet to sign
-  //   const signatures = await transact(async (wallet: Web3MobileWallet) => {
-  //     await wallet.authorize({
-  //       chain: `solana:${cluster}`,
-  //       identity: {
-  //         name: "Discipline Arena",
-  //         uri: "https://disciplinearena.app",
-  //         icon: "favicon.ico",
-  //       },
-  //     });
-
-  //     return await wallet.signMessages({
-  //       addresses: [walletAddress], // required
-  //       payloads: [encodedMessage], // required
-  //     });
-  //   });
-
-  //   // 4️⃣ signatures[0] is Uint8Array
-  //   const signatureBase58 = bs58.encode(signatures[0]);
-
-  //   // 5️⃣ Send to backend
-  //   const { token } = await verifyWallet({
-  //     walletAddress,
-  //     nonce,
-  //     signature: signatureBase58,
-  //   });
-
-  //   // 6️⃣ Store token securely
-  //   await saveToken(token);
-
-  //   // 7️⃣ Update Zustand auth state
-  //   useWalletStore.getState().setAuthenticated(true);
-
-  //   return token;
-  // };
-
+  }, [cluster]);
   // ============================================
   // DISCONNECT
   // ============================================
   const disconnect = useCallback(() => {
     setPublicKey(null);
+    authTokenRef.current = null;
+    useWalletStore.getState().setStatus("public");
+    void clearToken();
   }, []);
+
+  const signInWithWallet = useCallback(async () => {
+    if (!publicKey) throw new Error("Wallet not connected");
+
+    const walletAddress = publicKey.toBase58();
+
+    const nonce = await requestNonce({ walletAddress });
+
+    const message = `Discipline Arena Login\nNonce: ${nonce}`;
+    const encodedMessage = new TextEncoder().encode(message);
+
+    const signedBase64 = await transact(async (wallet) => {
+      await wallet.authorize({
+        chain: `solana:${cluster}`,
+        identity: APP_IDENTITY,
+      });
+
+      const result = await wallet.signMessages({
+        addresses: [walletAddress],
+        payloads: [encodedMessage],
+      });
+      console.log("SIGNED RAW:", result);
+      console.log("TYPE:", typeof result);
+
+      return result.signedPayloads[0]; // base64
+    });
+
+    if (!signedBase64) {
+      throw new Error("No signature returned");
+    }
+
+    const signatureBytes = Buffer.from(signedBase64, "base64");
+    const signatureBase58 = bs58.encode(signatureBytes);
+
+    const { token } = await verifyWallet({
+      walletAddress,
+      nonce,
+      signature: signatureBase58,
+    });
+
+    await saveToken(token);
+    useWalletStore.getState().setAuthenticated(true);
+
+    return walletAddress;
+  }, [publicKey, cluster]);
 
   // ============================================
   // GET BALANCE
@@ -238,11 +266,7 @@ export function useWallet() {
 
         // Step 3: Send to Phantom for signing + submission
         const txSignature = await transact(async (wallet: Web3MobileWallet) => {
-          // Re-authorize (Phantom needs this each session)
-          await wallet.authorize({
-            chain: `solana:${cluster}`,
-            identity: APP_IDENTITY,
-          });
+          await authorizeWalletSession(wallet, publicKey.toBase58());
 
           // Sign and send — Phantom shows the transaction details
           // User approves → Phantom signs → sends to network
@@ -258,7 +282,7 @@ export function useWallet() {
         setSending(false);
       }
     },
-    [publicKey, connection, cluster],
+    [authorizeWalletSession, publicKey, connection],
   );
 
   return {
@@ -270,7 +294,7 @@ export function useWallet() {
     disconnect,
     getBalance,
     sendSOL,
+    signInWithWallet,
     connection,
-    // loginWithBackend,
   };
 }

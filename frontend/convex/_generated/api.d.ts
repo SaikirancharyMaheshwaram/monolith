@@ -11,6 +11,8 @@
 import type * as auth from "../auth.js";
 import type * as duels from "../duels.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as mutations_duel from "../mutations/duel.js";
+import type * as test from "../test.js";
 
 import type {
   ApiFromModules,
@@ -22,6 +24,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   duels: typeof duels;
   "lib/auth": typeof lib_auth;
+  "mutations/duel": typeof mutations_duel;
+  test: typeof test;
 }>;
 
 /**

@@ -12,6 +12,8 @@ import { useWalletStore } from "@/stores/use-wallet-store";
 
 export default function TabTwoScreen() {
   const isDevnet = useWalletStore((s) => s.isDevnet);
+  const pubKey = useWalletStore((s) => s.publicKey);
+  const status = useWalletStore((s) => s.status);
   const toggleNetwork = useWalletStore((s) => s.toggleNetwork);
   return (
     <ParallaxScrollView
@@ -28,6 +30,8 @@ export default function TabTwoScreen() {
       <ThemedView>
         <View>
           <ThemedText>Use Devnet</ThemedText>
+          <ThemedText>Status:{status}</ThemedText>
+          <ThemedText>publicKey:{pubKey ? pubKey.toString() : ""}</ThemedText>
           <Text>
             {isDevnet ? "Testing network (free SOL)" : "Real network"}
           </Text>
