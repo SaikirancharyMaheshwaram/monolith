@@ -3,7 +3,8 @@ import { PublicKey } from "@solana/web3.js";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
-type AuthStatus = "public" | "connected" | "authenticated";
+// type AuthStatus = "public" | "connected" | "authenticated";
+type AuthStatus = "public" | "connected" | "authenticated" | "onboarding";
 
 interface WalletState {
   isDevnet: boolean;

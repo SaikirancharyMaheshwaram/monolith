@@ -9,12 +9,18 @@ import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Fonts } from "@/constants/theme";
 import { useWalletStore } from "@/stores/use-wallet-store";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 export default function TabTwoScreen() {
   const isDevnet = useWalletStore((s) => s.isDevnet);
   const pubKey = useWalletStore((s) => s.publicKey);
   const status = useWalletStore((s) => s.status);
   const toggleNetwork = useWalletStore((s) => s.toggleNetwork);
+  const userstatus = useWalletStore((s) => s.status);
+  const user = useQuery(api.users.getUserByWallet.getUserByWallet, {
+    walletAddress: pubKey?.toString() ?? "",
+  });
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: "#D0D0D0", dark: "#353636" }}
@@ -53,6 +59,10 @@ export default function TabTwoScreen() {
           Explore
         </ThemedText>
       </ThemedView>
+      <ThemedView>
+        <ThemedText>{JSON.stringify(user,null,2)}</ThemedText>
+      </ThemedView>
+
       <ThemedText>
         This app includes example code to help you get started.
       </ThemedText>

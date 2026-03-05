@@ -10,9 +10,27 @@
 
 import type * as auth from "../auth.js";
 import type * as duels from "../duels.js";
+import type * as duels_cancelOpenDuel from "../duels/cancelOpenDuel.js";
+import type * as duels_computeOutcome from "../duels/computeOutcome.js";
+import type * as duels_createFriendDuel from "../duels/createFriendDuel.js";
+import type * as duels_getActiveDuels from "../duels/getActiveDuels.js";
+import type * as duels_getDuelById from "../duels/getDuelById.js";
+import type * as duels_getDuelProgress from "../duels/getDuelProgress.js";
+import type * as duels_getScheduledDuels from "../duels/getScheduledDuels.js";
+import type * as duels_getUserByWallet from "../duels/getUserByWallet.js";
+import type * as duels_getUserDuels from "../duels/getUserDuels.js";
+import type * as duels_joinFriendDuel from "../duels/joinFriendDuel.js";
+import type * as duels_startDuel from "../duels/startDuel.js";
+import type * as duels_submitCompletion from "../duels/submitCompletion.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as mutations_duel from "../mutations/duel.js";
 import type * as test from "../test.js";
+import type * as users_createUser from "../users/createUser.js";
+import type * as users_getUserByWallet from "../users/getUserByWallet.js";
+import type * as utils_duelState from "../utils/duelState.js";
+import type * as utils_tier from "../utils/tier.js";
+import type * as utils_time from "../utils/time.js";
+import type * as utils_username from "../utils/username.js";
 
 import type {
   ApiFromModules,
@@ -23,9 +41,27 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   duels: typeof duels;
+  "duels/cancelOpenDuel": typeof duels_cancelOpenDuel;
+  "duels/computeOutcome": typeof duels_computeOutcome;
+  "duels/createFriendDuel": typeof duels_createFriendDuel;
+  "duels/getActiveDuels": typeof duels_getActiveDuels;
+  "duels/getDuelById": typeof duels_getDuelById;
+  "duels/getDuelProgress": typeof duels_getDuelProgress;
+  "duels/getScheduledDuels": typeof duels_getScheduledDuels;
+  "duels/getUserByWallet": typeof duels_getUserByWallet;
+  "duels/getUserDuels": typeof duels_getUserDuels;
+  "duels/joinFriendDuel": typeof duels_joinFriendDuel;
+  "duels/startDuel": typeof duels_startDuel;
+  "duels/submitCompletion": typeof duels_submitCompletion;
   "lib/auth": typeof lib_auth;
   "mutations/duel": typeof mutations_duel;
   test: typeof test;
+  "users/createUser": typeof users_createUser;
+  "users/getUserByWallet": typeof users_getUserByWallet;
+  "utils/duelState": typeof utils_duelState;
+  "utils/tier": typeof utils_tier;
+  "utils/time": typeof utils_time;
+  "utils/username": typeof utils_username;
 }>;
 
 /**

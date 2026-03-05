@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import {
   transact,
   Web3MobileWallet,
@@ -11,7 +11,7 @@ import {
   LAMPORTS_PER_SOL,
   clusterApiUrl,
 } from "@solana/web3.js";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import bs58 from "bs58";
 import { clearToken, saveToken } from "./token";
@@ -49,6 +49,10 @@ export function useWallet() {
   const cluster = isDevnet ? "devnet" : "mainnet-beta";
   const requestNonce = useMutation(api.auth.requestNonce);
   const verifyWallet = useMutation(api.auth.verifyWallet);
+  const user = useQuery(api.users.getUserByWallet.getUserByWallet, {
+    walletAddress: publicKey?.toString() ?? "",
+  });
+
   const connection = useMemo(
     () => new Connection(clusterApiUrl(cluster), "confirmed"),
     [cluster],
@@ -82,71 +86,15 @@ export function useWallet() {
     [cluster],
   );
 
-  // const connect = useCallback(async () => {
-  //   if (connectingRef.current) return publicKey;
-
-  //   connectingRef.current = true;
-  //   setConnecting(true);
-
-  //   try {
-  //     const authResult = await transact(async (wallet: Web3MobileWallet) => {
-  //       return await authorizeWalletSession(wallet);
-  //     });
-
-  //     const firstAccount = authResult.accounts[0];
-  //     if (!firstAccount) throw new Error("No wallet account returned");
-
-  //     const pubkey = new PublicKey(
-  //       Buffer.from(firstAccount.address, "base64"),
-  //     );
-  //     setPublicKey(pubkey);
-
-  //     const walletAddress = pubkey.toBase58();
-
-  //     const nonce = await requestNonce({ walletAddress });
-  //     const encodedMessage = new TextEncoder().encode(nonce);
-
-  //     const signatures = await transact(async (wallet: Web3MobileWallet) => {
-  //       await authorizeWalletSession(wallet, walletAddress);
-
-  //       return await wallet.signMessages({
-  //         addresses: [walletAddress],
-  //         payloads: [encodedMessage],
-  //       });
-  //     });
-
-  //     if (!signatures[0]) throw new Error("Wallet did not return a signature");
-  //     const signatureBase58 = bs58.encode(signatures[0]);
-
-  //     const { token } = await verifyWallet({
-  //       walletAddress,
-  //       nonce,
-  //       signature: signatureBase58,
-  //     });
-
-  //     await saveToken(token);
-  //     useWalletStore.getState().setAuthenticated(true);
-
-  //     return pubkey;
-  //   } catch (error) {
-  //     if (isWalletRequestDeclined(error)) {
-  //       setPublicKey(null);
-  //       useWalletStore.getState().setAuthenticated(false);
-  //       return null;
-  //     }
-
-  //     console.error("Connect/Login failed:", error);
-  //     throw error;
-  //   } finally {
-  //     connectingRef.current = false;
-  //     setConnecting(false);
-  //   }
-  // }, [
-  //   authorizeWalletSession,
-  //   publicKey,
-  //   requestNonce,
-  //   verifyWallet,
-  // ]);
+  useEffect(() => {
+    if (publicKey) {
+      if (user) {
+        useWalletStore.getState().setStatus("authenticated");
+      } else {
+        useWalletStore.getState().setStatus("onboarding");
+      }
+    }
+  }, [publicKey, user]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -166,7 +114,8 @@ export function useWallet() {
         Buffer.from(authResult.accounts[0].address, "base64"),
       );
       setPublicKey(pubkey);
-      useWalletStore.getState().setStatus("connected");
+
+      // setStatus("connected");
       useWalletStore.getState().setPublicKey(pubkey);
       return pubkey;
     } catch (error: any) {
@@ -185,51 +134,6 @@ export function useWallet() {
     useWalletStore.getState().setStatus("public");
     void clearToken();
   }, []);
-
-  const signInWithWallet = useCallback(async () => {
-    if (!publicKey) throw new Error("Wallet not connected");
-
-    const walletAddress = publicKey.toBase58();
-
-    const nonce = await requestNonce({ walletAddress });
-
-    const message = `Discipline Arena Login\nNonce: ${nonce}`;
-    const encodedMessage = new TextEncoder().encode(message);
-
-    const signedBase64 = await transact(async (wallet) => {
-      await wallet.authorize({
-        chain: `solana:${cluster}`,
-        identity: APP_IDENTITY,
-      });
-
-      const result = await wallet.signMessages({
-        addresses: [walletAddress],
-        payloads: [encodedMessage],
-      });
-      console.log("SIGNED RAW:", result);
-      console.log("TYPE:", typeof result);
-
-      return result.signedPayloads[0]; // base64
-    });
-
-    if (!signedBase64) {
-      throw new Error("No signature returned");
-    }
-
-    const signatureBytes = Buffer.from(signedBase64, "base64");
-    const signatureBase58 = bs58.encode(signatureBytes);
-
-    const { token } = await verifyWallet({
-      walletAddress,
-      nonce,
-      signature: signatureBase58,
-    });
-
-    await saveToken(token);
-    useWalletStore.getState().setAuthenticated(true);
-
-    return walletAddress;
-  }, [publicKey, cluster]);
 
   // ============================================
   // GET BALANCE
@@ -294,7 +198,7 @@ export function useWallet() {
     disconnect,
     getBalance,
     sendSOL,
-    signInWithWallet,
+
     connection,
   };
 }

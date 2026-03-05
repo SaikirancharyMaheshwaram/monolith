@@ -1,21 +1,3 @@
-// import { defineSchema, defineTable } from "convex/server";
-// import { v } from "convex/values";
-
-// export default defineSchema({
-//   users: defineTable({
-//     walletAddress: v.string(),
-//     username: v.string(),
-//     createdAt: v.number(),
-//   }).index("by_wallet", ["walletAddress"]),
-
-//   nonces: defineTable({
-//     walletAddress: v.string(),
-//     nonce: v.string(),
-//     createdAt: v.number(),
-//   }).index("by_wallet", ["walletAddress"]),
-// });
-
-// convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -23,9 +5,9 @@ export default defineSchema({
   users: defineTable({
     walletAddress: v.string(),
     username: v.string(),
-    usernameLower: v.string(), // for case-insensitive uniqueness
 
     selectedCharacter: v.string(),
+
     unlockedCharacters: v.array(v.string()),
     ownedItems: v.array(v.string()),
 
@@ -34,6 +16,7 @@ export default defineSchema({
 
     publicWins: v.number(),
     publicLosses: v.number(),
+
     totalWins: v.number(),
     totalLosses: v.number(),
 
@@ -44,24 +27,21 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_wallet", ["walletAddress"])
-    .index("by_usernameLower", ["usernameLower"]),
+    .index("by_username", ["username"]),
 
   duels: defineTable({
-    duelId: v.string(),
-
     mode: v.union(v.literal("PUBLIC"), v.literal("FRIEND")),
 
-    player1: v.string(),
-    player2: v.optional(v.string()),
+    player1: v.id("users"),
+    player2: v.optional(v.id("users")),
 
-    stakeTier: v.number(),
+    stakeAmount: v.number(),
 
     status: v.union(
       v.literal("CREATED"),
       v.literal("OPEN"),
       v.literal("ACTIVE"),
       v.literal("COMPLETED"),
-      v.literal("SETTLEMENT_READY"),
       v.literal("RESOLVED"),
       v.literal("CANCELLED"),
     ),
@@ -75,28 +55,29 @@ export default defineSchema({
     shieldUsedPlayer1: v.boolean(),
     shieldUsedPlayer2: v.boolean(),
 
-    winner: v.optional(v.string()),
-
     resolved: v.boolean(),
 
-    nonce: v.optional(v.string()),
+    winner: v.optional(v.id("users")),
+
+    nonce: v.number(),
 
     createdAt: v.number(),
   })
-    .index("by_duelId", ["duelId"])
     .index("by_status", ["status"])
-    .index("by_nonce", ["nonce"]),
+    .index("by_player1", ["player1"])
+    .index("by_player2", ["player2"]),
 
   submissions: defineTable({
-    duelId: v.string(),
-    player: v.string(),
+    duelId: v.id("duels"),
+    player: v.id("users"),
     dayNumber: v.number(),
     timestamp: v.number(),
   }).index("by_duel_player_day", ["duelId", "player", "dayNumber"]),
 
-  nonces: defineTable({
-    walletAddress: v.string(),
-    nonce: v.string(),
+  settlements: defineTable({
+    duelId: v.id("duels"),
+    payloadHash: v.string(),
+    signature: v.string(),
     createdAt: v.number(),
-  }).index("by_wallet", ["walletAddress"]),
+  }).index("by_duel", ["duelId"]),
 });
