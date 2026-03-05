@@ -31,13 +31,17 @@ export default function TabLayout() {
       <Tabs.Screen
         name="landing"
         options={{
-          title: "home",
+          title: "Brief",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={22} name="chevron.left.forwardslash.chevron.right" color={color} />
+          ),
         }}
       />
+
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: "Lobby",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={22} name="house.fill" color={color} />
           ),
@@ -55,12 +59,29 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="battle"
+        options={{
+          title: "Battle",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={22} name="bolt.fill" color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={22} name="person.fill" color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="explore"
         options={{
-          title: "System",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="paperplane.fill" color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>

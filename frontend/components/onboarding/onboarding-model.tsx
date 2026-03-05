@@ -1,26 +1,23 @@
+import { CHARACTER_OPTIONS, CharacterId } from "@/components/characters";
+import { C } from "@/components/lobby-theme";
+import { api } from "@/convex/_generated/api";
+import { useWalletStore } from "@/stores/use-wallet-store";
+import { useMutation } from "convex/react";
 import { useState } from "react";
 import {
+  FlatList,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
-  View,
-  Text,
-  TextInput,
+  Platform,
   Pressable,
   StyleSheet,
-  FlatList,
+  Text,
+  TextInput,
   TouchableWithoutFeedback,
-  Keyboard,
+  View,
 } from "react-native";
-import { useMutation } from "convex/react";
-
-import { useWalletStore } from "@/stores/use-wallet-store";
-import { api } from "@/convex/_generated/api";
-import { KeyboardAvoidingView, Platform } from "react-native";
-import { ThemedText } from "../themed-text";
-const CHARACTERS = [
-  { id: "warrior", name: "Warrior" },
-  { id: "assassin", name: "Assassin" },
-  { id: "monk", name: "Monk" },
-];
 
 export default function OnboardingModal() {
   const [isVisible, setIsVisible] = useState(true);
@@ -30,39 +27,19 @@ export default function OnboardingModal() {
   const setStatus = useWalletStore((s) => s.setStatus);
 
   const [username, setUsername] = useState("");
-  const [selectedCharacter, setSelectedCharacter] = useState("warrior");
+  const [selectedCharacter, setSelectedCharacter] = useState<CharacterId>("warrior");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // async function handleCreate() {
-  //   if (!publicKey) return;
-  //   if (username.length < 3) return;
-
-  //   setLoading(true);
-
-  //   try {
-  //     await createUser({
-  //       walletAddress: publicKey.toBase58(),
-  //       username,
-  //       selectedCharacter,
-  //     });
-
-  //     setStatus("authenticated");
-  //   } catch (err) {
-  //     console.error(err);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // }
-  //
   async function handleCreate() {
     if (!publicKey) return;
-    if (username.length < 3) return;
+    if (username.trim().length < 3) return;
+
     setLoading(true);
     try {
       setError("");
-      const result = await createUser({
-        walletAddress: publicKey.toBase58(),
+      await createUser({
+        walletAddress: publicKey,
         username,
         selectedCharacter,
       });
@@ -86,24 +63,27 @@ export default function OnboardingModal() {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.overlay}>
             <View style={styles.container}>
-              <Text style={styles.title}>Enter the Arena</Text>
+              <Text style={styles.title}>SYSTEM REGISTRATION</Text>
 
               <Text style={styles.label}>Choose Username</Text>
 
               <TextInput
                 placeholder="username"
+                placeholderTextColor={C.slate600}
                 value={username}
                 onChangeText={setUsername}
                 style={styles.input}
+                autoCapitalize="none"
               />
-              <ThemedText style={{marginBottom:5}}>{error ? error : ""}</ThemedText>
+              {!!error && <Text style={styles.error}>{error}</Text>}
 
               <Text style={styles.label}>Select Character</Text>
 
               <FlatList
                 horizontal
-                data={CHARACTERS}
+                data={CHARACTER_OPTIONS}
                 keyExtractor={(item) => item.id}
+                contentContainerStyle={{ gap: 10 }}
                 renderItem={({ item }) => {
                   const selected = selectedCharacter === item.id;
 
@@ -115,6 +95,7 @@ export default function OnboardingModal() {
                         selected && styles.characterSelected,
                       ]}
                     >
+                      <Image source={item.image} style={styles.avatar} resizeMode="cover" />
                       <Text style={styles.characterText}>{item.name}</Text>
                     </Pressable>
                   );
@@ -129,13 +110,6 @@ export default function OnboardingModal() {
                 <Text style={styles.buttonText}>
                   {loading ? "Creating..." : "Enter Arena"}
                 </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.button, { backgroundColor: "#444" }]}
-                onPress={() => setIsVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
               </Pressable>
             </View>
           </View>
@@ -154,57 +128,87 @@ const styles = StyleSheet.create({
   },
 
   container: {
-    width: "85%",
+    width: "88%",
     backgroundColor: "#111",
     borderRadius: 16,
-    padding: 24,
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+    padding: 20,
   },
 
   title: {
-    fontSize: 24,
-    color: "white",
-    fontWeight: "bold",
-    marginBottom: 20,
+    fontSize: 14,
+    color: C.mana,
+    fontFamily: "monospace",
+    letterSpacing: 2,
+    marginBottom: 16,
   },
 
   label: {
-    color: "#aaa",
-    marginBottom: 6,
+    color: C.slate400,
+    marginBottom: 8,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+    fontSize: 11,
   },
 
   input: {
-    backgroundColor: "#222",
+    backgroundColor: "#1b2532",
     borderRadius: 8,
     padding: 12,
     color: "white",
-    marginBottom: 20,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+  },
+
+  error: {
+    color: "#ff7f7f",
+    marginBottom: 10,
+    fontSize: 11,
   },
 
   character: {
-    backgroundColor: "#222",
-    padding: 16,
-    marginRight: 10,
+    width: 110,
+    backgroundColor: "#1b2532",
+    padding: 8,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
   },
 
   characterSelected: {
-    backgroundColor: "#4f46e5",
+    borderColor: C.mana,
+    backgroundColor: C.manaDim,
+  },
+
+  avatar: {
+    width: "100%",
+    height: 90,
+    borderRadius: 8,
+    marginBottom: 8,
   },
 
   characterText: {
     color: "white",
+    textAlign: "center",
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+    fontSize: 10,
   },
 
   button: {
-    marginTop: 20,
-    backgroundColor: "#4f46e5",
+    marginTop: 18,
+    backgroundColor: C.mana,
     padding: 14,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: "center",
   },
 
   buttonText: {
-    color: "white",
+    color: C.black,
     fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
 });

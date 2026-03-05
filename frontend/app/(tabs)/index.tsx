@@ -4,6 +4,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { QuestCard } from "@/components/QuestCard";
 import { StatBlock } from "@/components/StatBlock";
 import { SystemWindow } from "@/components/SystemWindow";
+import { CHARACTER_OPTIONS, CharacterId } from "@/components/characters";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -15,6 +16,7 @@ import { useQuery } from "convex/react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -25,9 +27,18 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const CHARACTERS = ["warrior", "assassin", "monk"];
 const STAKES = [0.1, 0.5, 1, 2];
 const START_DELAY_OPTIONS = [10, 30, 60];
+const LOBBY_FEED = [
+  "Hunter contract secured.",
+  "Stake creates real accountability.",
+  "Complete daily task or lose the gate.",
+];
+const MISSION_BOARD = [
+  { title: "Daily Proof", status: "PENDING" },
+  { title: "Gate Discipline", status: "LIVE" },
+  { title: "Stake Safety", status: "SECURED" },
+];
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -56,7 +67,8 @@ export default function HomeScreen() {
 
   const [showRegistration, setShowRegistration] = useState(false);
   const [usernameInput, setUsernameInput] = useState("");
-  const [selectedCharacter, setSelectedCharacter] = useState("warrior");
+  const [selectedCharacter, setSelectedCharacter] =
+    useState<CharacterId>("warrior");
 
   const [showArenaModal, setShowArenaModal] = useState(false);
   const [stake, setStake] = useState(STAKES[2]);
@@ -263,6 +275,21 @@ export default function HomeScreen() {
         )}
 
         {!isWalletDisconnected && !isNewPlayer && (
+          <SystemWindow style={styles.missionWindow}>
+            <Text style={styles.sectionLabel}>MISSION BOARD</Text>
+            <View style={styles.missionList}>
+              {MISSION_BOARD.map((item) => (
+                <View key={item.title} style={styles.missionRow}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.missionTitle}>{item.title}</Text>
+                  <Text style={styles.missionStatus}>{item.status}</Text>
+                </View>
+              ))}
+            </View>
+          </SystemWindow>
+        )}
+
+        {!isWalletDisconnected && !isNewPlayer && (
           <SystemWindow>
             <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
             <View style={styles.actionStack}>
@@ -272,6 +299,19 @@ export default function HomeScreen() {
                 variant="ghost"
                 onPress={() => setShowArenaModal(true)}
               />
+            </View>
+          </SystemWindow>
+        )}
+
+        {!isWalletDisconnected && (
+          <SystemWindow style={styles.feedWindow}>
+            <Text style={styles.sectionLabel}>HUNTER FEED</Text>
+            <View style={styles.feedList}>
+              {LOBBY_FEED.map((line) => (
+                <Text key={line} style={styles.feedText}>
+                  ▸ {line}
+                </Text>
+              ))}
             </View>
           </SystemWindow>
         )}
@@ -293,15 +333,18 @@ export default function HomeScreen() {
 
             <Text style={styles.modalLabel}>Select character</Text>
             <View style={styles.chipRow}>
-              {CHARACTERS.map((ch) => {
-                const selected = selectedCharacter === ch;
+              {CHARACTER_OPTIONS.map((ch) => {
+                const selected = selectedCharacter === ch.id;
                 return (
                   <TouchableOpacity
-                    key={ch}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    onPress={() => setSelectedCharacter(ch)}
+                    key={ch.id}
+                    style={[styles.characterCard, selected && styles.characterCardSelected]}
+                    onPress={() => setSelectedCharacter(ch.id)}
                   >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{ch}</Text>
+                    <Image source={ch.image} style={styles.characterImage} />
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                      {ch.name}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -480,6 +523,52 @@ const styles = StyleSheet.create({
   actionStack: {
     gap: 10,
   },
+  feedWindow: {
+    borderColor: C.manaBorder,
+    backgroundColor: "rgba(0,209,255,0.04)",
+  },
+  missionWindow: {
+    borderColor: C.purpleBorder,
+    backgroundColor: "rgba(153,69,255,0.05)",
+  },
+  missionList: {
+    gap: 10,
+  },
+  missionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: C.green,
+  },
+  missionTitle: {
+    flex: 1,
+    color: C.slate400,
+    fontFamily: "monospace",
+    fontSize: 12,
+  },
+  missionStatus: {
+    color: C.purple,
+    fontFamily: "monospace",
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  feedList: {
+    gap: 6,
+  },
+  feedText: {
+    color: C.slate400,
+    fontSize: 12,
+    fontFamily: "monospace",
+    lineHeight: 18,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.82)",
@@ -523,6 +612,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    marginBottom: 6,
+  },
+  characterCard: {
+    width: "31%",
+    minWidth: 92,
+    borderWidth: 1,
+    borderColor: C.slate700,
+    borderRadius: 6,
+    padding: 6,
+    backgroundColor: "rgba(255,255,255,0.02)",
+  },
+  characterCardSelected: {
+    borderColor: C.mana,
+    backgroundColor: C.manaDim,
+  },
+  characterImage: {
+    width: "100%",
+    height: 72,
+    borderRadius: 4,
     marginBottom: 6,
   },
   chip: {

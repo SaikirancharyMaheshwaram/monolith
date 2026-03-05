@@ -1,5 +1,4 @@
 import { asyncStorageAdapter } from "@/lib/storage";
-import { PublicKey } from "@solana/web3.js";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
@@ -14,8 +13,8 @@ interface WalletState {
   status: AuthStatus;
   setStatus: (s: AuthStatus) => void;
 
-  publicKey: PublicKey | null;
-  setPublicKey: (key: PublicKey | null) => void;
+  publicKey: string | null;
+  setPublicKey: (key: string | null) => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -33,7 +32,21 @@ export const useWalletStore = create<WalletState>()(
 
     {
       name: "wallet-storage",
+      version: 2,
       storage: createJSONStorage(() => asyncStorageAdapter),
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<WalletState> & {
+          publicKey?: unknown;
+        };
+
+        const nextPublicKey =
+          typeof state.publicKey === "string" ? state.publicKey : null;
+
+        return {
+          ...state,
+          publicKey: nextPublicKey,
+        } as WalletState;
+      },
     },
   ),
 );
