@@ -8,8 +8,6 @@
  * @module
  */
 
-import type * as auth from "../auth.js";
-import type * as duels from "../duels.js";
 import type * as duels_cancelOpenDuel from "../duels/cancelOpenDuel.js";
 import type * as duels_computeOutcome from "../duels/computeOutcome.js";
 import type * as duels_createFriendDuel from "../duels/createFriendDuel.js";
@@ -21,10 +19,11 @@ import type * as duels_getUserByWallet from "../duels/getUserByWallet.js";
 import type * as duels_getUserDuels from "../duels/getUserDuels.js";
 import type * as duels_joinFriendDuel from "../duels/joinFriendDuel.js";
 import type * as duels_startDuel from "../duels/startDuel.js";
-import type * as duels_submitCompletion from "../duels/submitCompletion.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_sha from "../lib/sha.js";
+import type * as lib_signPayload from "../lib/signPayload.js";
 import type * as mutations_duel from "../mutations/duel.js";
-import type * as test from "../test.js";
+import type * as submissions_submitCompletion from "../submissions/submitCompletion.js";
 import type * as users_createUser from "../users/createUser.js";
 import type * as users_getUserByWallet from "../users/getUserByWallet.js";
 import type * as utils_duelState from "../utils/duelState.js";
@@ -39,8 +38,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  auth: typeof auth;
-  duels: typeof duels;
   "duels/cancelOpenDuel": typeof duels_cancelOpenDuel;
   "duels/computeOutcome": typeof duels_computeOutcome;
   "duels/createFriendDuel": typeof duels_createFriendDuel;
@@ -52,10 +49,11 @@ declare const fullApi: ApiFromModules<{
   "duels/getUserDuels": typeof duels_getUserDuels;
   "duels/joinFriendDuel": typeof duels_joinFriendDuel;
   "duels/startDuel": typeof duels_startDuel;
-  "duels/submitCompletion": typeof duels_submitCompletion;
   "lib/auth": typeof lib_auth;
+  "lib/sha": typeof lib_sha;
+  "lib/signPayload": typeof lib_signPayload;
   "mutations/duel": typeof mutations_duel;
-  test: typeof test;
+  "submissions/submitCompletion": typeof submissions_submitCompletion;
   "users/createUser": typeof users_createUser;
   "users/getUserByWallet": typeof users_getUserByWallet;
   "utils/duelState": typeof utils_duelState;

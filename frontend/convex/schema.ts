@@ -76,6 +76,7 @@ export default defineSchema({
 
   settlements: defineTable({
     duelId: v.id("duels"),
+    payload: v.string(),
     payloadHash: v.string(),
     signature: v.string(),
     createdAt: v.number(),

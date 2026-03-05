@@ -1,6 +1,9 @@
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 
+import { sha256 } from "../lib/sha";
+import { signHash } from "../lib/signPayload";
+
 export const computeOutcome = mutation({
   args: {
     duelId: v.id("duels"),
@@ -11,7 +14,6 @@ export const computeOutcome = mutation({
 
     if (!duel) throw new Error("Duel not found");
 
-    // Prevent duplicate settlement payloads
     const existingSettlement = await ctx.db
       .query("settlements")
       .withIndex("by_duel", (q) => q.eq("duelId", args.duelId))
@@ -24,18 +26,15 @@ export const computeOutcome = mutation({
       };
     }
 
-    if (duel.status !== "ACTIVE")
-      throw new Error("Duel not active");
+    if (duel.status !== "ACTIVE") throw new Error("Duel not active");
 
-    if (duel.resolved)
-      throw new Error("Duel already resolved");
+    if (duel.resolved) throw new Error("Duel already resolved");
 
     const now = Date.now();
 
-    if (now < duel.endTime)
+    if (!duel.endTime || now < duel.endTime)
       throw new Error("Duel has not ended yet");
 
-    // Collect submissions
     const submissions = await ctx.db
       .query("submissions")
       .filter((q) => q.eq(q.field("duelId"), args.duelId))
@@ -49,18 +48,23 @@ export const computeOutcome = mutation({
       if (s.player === duel.player2) p2Score++;
     }
 
-    // Determine outcome
-    let outcome: "PLAYER1_WIN" | "PLAYER2_WIN" | "DRAW";
+    // Outcome cases
+    let outcome:
+      | "PLAYER1_WIN"
+      | "PLAYER2_WIN"
+      | "DRAW_BOTH_SUCCESS"
+      | "DRAW_BOTH_FAIL";
 
-    if (p1Score > p2Score) {
+    if (p1Score === 0 && p2Score === 0) {
+      outcome = "DRAW_BOTH_FAIL";
+    } else if (p1Score > p2Score) {
       outcome = "PLAYER1_WIN";
     } else if (p2Score > p1Score) {
       outcome = "PLAYER2_WIN";
     } else {
-      outcome = "DRAW";
+      outcome = "DRAW_BOTH_SUCCESS";
     }
 
-    // Settlement payload (no money math)
     const payload = {
       duelId: args.duelId,
       player1: duel.player1,
@@ -68,17 +72,21 @@ export const computeOutcome = mutation({
       outcome,
       p1Score,
       p2Score,
+      stakeAmount: duel.stakeAmount,
       nonce: duel.nonce,
     };
 
-    // In production you would hash + sign this payload
-    const payloadHash = JSON.stringify(payload);
-    const signature = "backend_signature_placeholder";
+    const payloadString = JSON.stringify(payload);
+
+    const payloadHash = await sha256(payloadString);
+
+    const signature = signHash(payloadHash);
 
     await ctx.db.insert("settlements", {
       duelId: args.duelId,
       payloadHash,
       signature,
+      payload: payloadString,
       createdAt: now,
     });
 
@@ -87,15 +95,17 @@ export const computeOutcome = mutation({
         outcome === "PLAYER1_WIN"
           ? duel.player1
           : outcome === "PLAYER2_WIN"
-          ? duel.player2
-          : undefined,
+            ? duel.player2
+            : undefined,
       resolved: true,
       status: "COMPLETED",
     });
 
     return {
       payload,
+      payloadHash,
       signature,
+      payloadString,
     };
   },
 });
