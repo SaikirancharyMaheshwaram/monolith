@@ -1,294 +1,542 @@
-import {
-  View,
-  Text,
-  Button,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
-import { useMutation, useQuery } from "convex/react";
+import { GateButton } from "@/components/GateButton";
+import { SystemWindow } from "@/components/SystemWindow";
+import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { useWalletStore } from "@/stores/use-wallet-store";
+import { Doc } from "@/convex/_generated/dataModel";
+import { useWallet } from "@/lib/use-wallet";
+import { useUserStore } from "@/stores/userStore";
+import { useMutation, useQuery } from "convex/react";
+import * as Linking from "expo-linking";
+import { useState } from "react";
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Helper: format time remaining
-const formatTimeRemaining = (endTime?: number) => {
-  if (!endTime) return "—";
-  const now = Date.now();
-  const remaining = endTime - now;
-  if (remaining <= 0) return "Ended";
+const STAKES = [0.1, 0.5, 1, 2];
+const START_MINUTES = [10, 30, 60, 120];
 
-  const hours = Math.floor(remaining / (1000 * 60 * 60));
-  const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-  return `${hours}h ${minutes}m`;
-};
+export default function DuelHubScreen() {
+  const wallet = useWallet();
+  const publicKey = useUserStore((s) => s.walletAddress);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [stakeAmount, setStakeAmount] = useState(STAKES[2]);
+  const [startInMins, setStartInMins] = useState(START_MINUTES[1]);
+  const [createLoading, setCreateLoading] = useState(false);
 
-// Helper: get status badge styles
-const getStatusStyle = (status: string) => {
-  const styles: Record<string, { bg: string; text: string }> = {
-    CREATED: { bg: "#e0e7ff", text: "#3730a3" },
-    OPEN: { bg: "#fef3c7", text: "#92400e" },
-    ACTIVE: { bg: "#dcfce7", text: "#166534" },
-    COMPLETED: { bg: "#f3e8ff", text: "#6b21a8" },
-    RESOLVED: { bg: "#dbeafe", text: "#1e40af" },
-    CANCELLED: { bg: "#fee2e2", text: "#991b1b" },
-  };
-  return styles[status] || { bg: "#f3f4f6", text: "#374151" };
-};
-
-export default function DuelScreen() {
-  const submitCompletion = useMutation(
-    api.duels.submitCompletion.submitCompletion,
+  const createFriendDuel = useMutation(
+    api.duels.createFriendDuel.createFriendDuel,
   );
-  const computeOutcome = useMutation(api.duels.computeOutcome.computeOutcome);
-  const cancelDuel = useMutation(api.duels.cancelOpenDuel.cancelOpenDuel);
+  const cancelOpenDuel = useMutation(api.duels.cancelOpenDuel.cancelOpenDuel);
 
-  const duelId = "jh717jr3y0tb8h0pw41m0cz5xs82b52y" as Id<"duels">;
-  const walletAddress = useWalletStore((s) => s.publicKey);
+  const walletAddress = wallet.publicKey?.toBase58() ?? "";
 
-  // Fetch user & duel in parallel
-  const user = useQuery(api.users.getUserByWallet.getUserByWallet, {
-    walletAddress: walletAddress?.toString()!,
-  });
-  const duel = useQuery(api.duels.getDuelById.getDuelById, { id: duelId }); // ✅ You'll need this query
+  const user = useQuery(
+    api.users.getUserByWallet.getUserByWallet,
+    publicKey ? { walletAddress:publicKey } : "skip",
+  );
 
-  // Loading states
-  if (user === undefined || duel === undefined) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingText}>Loading duel…</Text>
-      </View>
-    );
-  }
+  const duels = useQuery(
+    api.duels.getUserDuels.getUserDuels,
+    user ? { userId: user._id } : "skip",
+  );
 
-  if (user === null) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>User not found</Text>
-        <Text style={styles.hint}>Please connect your wallet</Text>
-      </View>
-    );
-  }
+  const activeDuels = (duels ?? []).filter((d) => d.status === "ACTIVE");
+  const openDuels = (duels ?? []).filter((d) => d.status === "OPEN");
+  const historyDuels = (duels ?? []).filter(
+    (d) =>
+      d.status === "COMPLETED" ||
+      d.status === "RESOLVED" ||
+      d.status === "CANCELLED",
+  );
 
-  if (duel === null) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>Duel not found</Text>
-        <Text style={styles.hint}>This duel may have been deleted</Text>
-      </View>
-    );
-  }
+  const handleCreateInvite = async () => {
+    if (!walletAddress) return;
 
-  // Compute derived state
-  const isPlayer = duel.player1 === user._id || duel.player2 === user._id;
-  const canSubmit =
-    duel.status === "ACTIVE" &&
-    isPlayer &&
-    Date.now() < (duel.endTime ?? 0) + 2 * 60 * 1000; // grace window
-
-  const canResolve =
-    duel.status === "COMPLETED" || Date.now() >= (duel.endTime ?? 0);
-
-  const canCancel = duel.status === "OPEN" && duel.player1 === user._id; // Only creator can cancel open duels
-
-  // Mutation handlers with error handling
-  const handleComplete = async () => {
+    setCreateLoading(true);
     try {
-      const result = await submitCompletion({
-        duelId,
-        player: user._id,
+      const duelId = await createFriendDuel({
+        player1: walletAddress,
+        stakeAmount,
+        startTime: Date.now() + startInMins * 60 * 1000,
       });
-      if (result?.message) {
-        Alert.alert("ℹ️ Info", result.message);
-      } else {
-        Alert.alert("✅ Success", "Submission recorded!");
-      }
-    } catch (err: any) {
-      Alert.alert("❌ Error", err.message || "Failed to submit");
-    }
-  };
 
-  const handleResolve = async () => {
-    if (!canResolve) {
-      Alert.alert("⏳ Not Ready", "Duel must end before resolution");
-      return;
-    }
-    try {
-      await computeOutcome({ duelId });
-      Alert.alert("✅ Resolved", "Duel outcome computed");
-    } catch (err: any) {
-      Alert.alert("❌ Error", err.message || "Failed to resolve");
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!canCancel) {
+      setShowCreateModal(false);
+      await shareInviteLink(String(duelId));
+    } catch (error: any) {
       Alert.alert(
-        "⚠️ Cannot Cancel",
-        "Only open duels can be cancelled by their creator",
+        "Create failed",
+        error?.message ?? "Could not create duel invite",
       );
-      return;
+    } finally {
+      setCreateLoading(false);
     }
-    Alert.alert(
-      "Confirm Cancel",
-      "Are you sure? This action cannot be undone.",
-      [
-        { text: "Keep Duel", style: "cancel" },
-        {
-          text: "Cancel Duel",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await cancelDuel({ duelId, caller: user._id });
-              Alert.alert("✅ Cancelled", "Duel has been cancelled");
-            } catch (err: any) {
-              Alert.alert("❌ Error", err.message || "Failed to cancel");
-            }
-          },
-        },
-      ],
-    );
   };
 
-  const statusStyle = getStatusStyle(duel.status);
+  const shareInviteLink = async (duelId: string) => {
+    const inviteUrl = Linking.createURL("/", { queryParams: { duelId } });
+    await Share.share({
+      message: `Join my gate: ${inviteUrl}`,
+      url: inviteUrl,
+    });
+  };
+
+  const handleCancelOpen = async (duel: Doc<"duels">) => {
+    if (!user) return;
+    try {
+      await cancelOpenDuel({ duelId: duel._id, caller: user._id });
+      Alert.alert("Gate cancelled", "Open duel cancelled.");
+    } catch (error: any) {
+      Alert.alert("Cancel failed", error?.message ?? "Could not cancel duel");
+    }
+  };
+
+  // if (!wallet.connected) {
+  //   return (
+  //     <SafeAreaView style={styles.safeArea}>
+  //       <View style={styles.centered}>
+  //         <Text style={styles.header}>DUEL TERMINAL</Text>
+  //         <Text style={styles.sub}>Connect wallet to view your duels.</Text>
+  //       </View>
+  //     </SafeAreaView>
+  //   );
+  // }
+
+  // if (user === undefined || duels === undefined) {
+  //   return (
+  //     <SafeAreaView style={styles.safeArea}>
+  //       <View style={styles.centered}>
+  //         <Text style={styles.header}>SYNCING DUEL LOGS...</Text>
+  //       </View>
+  //     </SafeAreaView>
+  //   );
+  // }
+
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.centered}>
+          <Text style={styles.header}>NO HUNTER PROFILE</Text>
+          <Text style={styles.sub}>Complete registration on Home first.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Duel</Text>
-        <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-          <Text style={[styles.badgeText, { color: statusStyle.text }]}>
-            {duel.status}
-          </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <SystemWindow>
+          <View style={styles.rowBetween}>
+            <View>
+              <Text style={styles.sectionLabel}>DUEL TERMINAL</Text>
+              <Text style={styles.sub}>
+                {user.username} • {user.tier}
+              </Text>
+            </View>
+            <View style={styles.livePill}>
+              <Text style={styles.livePillText}>
+                {activeDuels.length} ACTIVE
+              </Text>
+            </View>
+          </View>
+          <View style={styles.topActions}>
+            <GateButton
+              label="Invite Friend"
+              onPress={() => setShowCreateModal(true)}
+            />
+          </View>
+        </SystemWindow>
+
+        <Section title="ACTIVE GATES" emptyText="No active gate running.">
+          {activeDuels.map((duel) => (
+            <DuelCard
+              key={duel._id}
+              duel={duel}
+              mineId={user._id}
+              onShare={shareInviteLink}
+            />
+          ))}
+        </Section>
+
+        <Section title="OPEN INVITES" emptyText="No open invites.">
+          {openDuels.map((duel) => (
+            <DuelCard
+              key={duel._id}
+              duel={duel}
+              mineId={user._id}
+              onShare={shareInviteLink}
+              onCancel={handleCancelOpen}
+            />
+          ))}
+        </Section>
+
+        <Section title="DUEL HISTORY" emptyText="No completed duels yet.">
+          {historyDuels.map((duel) => (
+            <DuelCard
+              key={duel._id}
+              duel={duel}
+              mineId={user._id}
+              onShare={shareInviteLink}
+              compact
+            />
+          ))}
+        </Section>
+      </ScrollView>
+
+      <Modal transparent visible={showCreateModal} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>FORGE INVITE GATE</Text>
+
+            <Text style={styles.modalLabel}>Stake</Text>
+            <View style={styles.chipRow}>
+              {STAKES.map((value) => {
+                const selected = value === stakeAmount;
+                return (
+                  <Chip
+                    key={value}
+                    label={`${value} SOL`}
+                    selected={selected}
+                    onPress={() => setStakeAmount(value)}
+                  />
+                );
+              })}
+            </View>
+
+            <Text style={styles.modalLabel}>Starts in</Text>
+            <View style={styles.chipRow}>
+              {START_MINUTES.map((value) => {
+                const selected = value === startInMins;
+                return (
+                  <Chip
+                    key={value}
+                    label={`${value}m`}
+                    selected={selected}
+                    onPress={() => setStartInMins(value)}
+                  />
+                );
+              })}
+            </View>
+
+            <View style={styles.actionStack}>
+              <GateButton
+                label={createLoading ? "Forging..." : "Create Invite"}
+                onPress={handleCreateInvite}
+                disabled={createLoading}
+              />
+              <GateButton
+                label="Close"
+                variant="ghost"
+                onPress={() => setShowCreateModal(false)}
+              />
+            </View>
+          </View>
         </View>
-      </View>
-
-      {/* Duel Details */}
-      <View style={styles.card}>
-        <DetailRow
-          label="Time Remaining"
-          value={formatTimeRemaining(duel.endTime)}
-        />
-        <DetailRow label="Stake" value={`${duel.stakeAmount} tokens`} />
-        <DetailRow label="Mode" value={duel.mode} />
-        <DetailRow
-          label="Players"
-          value={duel.player2 ? "2/2" : "1/2 (waiting)"}
-        />
-      </View>
-
-      {/* Action Buttons - Conditionally Rendered */}
-      <View style={styles.actions}>
-        {canSubmit && (
-          <Button
-            title="✅ Submit Completion"
-            onPress={handleComplete}
-            disabled={!canSubmit}
-          />
-        )}
-
-        {canResolve && (
-          <Button
-            title="🏁 Resolve Duel"
-            onPress={handleResolve}
-            color="#7c3aed"
-          />
-        )}
-
-        {canCancel && (
-          <Button
-            title="🗑️ Cancel Duel"
-            onPress={handleCancel}
-            color="#dc2626"
-          />
-        )}
-
-        {/* Disabled state hints */}
-        {!canSubmit && duel.status === "ACTIVE" && isPlayer && (
-          <Text style={styles.hint}>⏱️ Submission window closed</Text>
-        )}
-        {!canResolve && duel.status === "ACTIVE" && (
-          <Text style={styles.hint}>⏳ Wait for duel to end to resolve</Text>
-        )}
-        {!canCancel && duel.status === "OPEN" && duel.player1 !== user._id && (
-          <Text style={styles.hint}>🔒 Only the creator can cancel</Text>
-        )}
-      </View>
-
-      {/* Debug info (remove in production) */}
-      {__DEV__ && (
-        <View style={styles.debug}>
-          <Text style={styles.debugText}>Duel ID: {duelId}</Text>
-          <Text style={styles.debugText}>Status: {duel.status}</Text>
-          <Text style={styles.debugText}>
-            End Time: {new Date(duel.endTime ?? 0).toLocaleString()}
-          </Text>
-        </View>
-      )}
+      </Modal>
     </SafeAreaView>
   );
 }
 
-// Subcomponent for detail rows
-function DetailRow({ label, value }: { label: string; value: string }) {
+function Section({
+  title,
+  emptyText,
+  children,
+}: {
+  title: string;
+  emptyText: string;
+  children: React.ReactNode;
+}) {
+  const count = Array.isArray(children) ? children.length : children ? 1 : 0;
+
   return (
-    <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+    <SystemWindow>
+      <Text style={styles.sectionLabel}>{title}</Text>
+      {count === 0 ? (
+        <Text style={styles.empty}>{emptyText}</Text>
+      ) : (
+        <View style={styles.list}>{children}</View>
+      )}
+    </SystemWindow>
+  );
+}
+
+function DuelCard({
+  duel,
+  mineId,
+  onShare,
+  onCancel,
+  compact,
+}: {
+  duel: Doc<"duels">;
+  mineId: Doc<"users">["_id"];
+  onShare: (duelId: string) => Promise<void>;
+  onCancel?: (duel: Doc<"duels">) => Promise<void>;
+  compact?: boolean;
+}) {
+  const isCreator = duel.player1 === mineId;
+  const showInviteActions = duel.status === "OPEN" && isCreator;
+
+  return (
+    <View style={[styles.card, compact && styles.compactCard]}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.cardTitle}>{duel.mode} GATE</Text>
+        <Text
+          style={[
+            styles.status,
+            duel.status === "ACTIVE" && styles.statusActive,
+          ]}
+        >
+          {duel.status}
+        </Text>
+      </View>
+
+      <View style={styles.metaRow}>
+        <Text style={styles.meta}>Stake: {duel.stakeAmount} SOL</Text>
+        <Text style={styles.meta}>
+          Start:{" "}
+          {duel.startTime ? new Date(duel.startTime).toLocaleString() : "TBD"}
+        </Text>
+      </View>
+
+      {showInviteActions ? (
+        <View style={styles.inlineActions}>
+          <TouchableOpacity
+            onPress={() => void onShare(String(duel._id))}
+            style={styles.inlineButton}
+          >
+            <Text style={styles.inlineButtonText}>Share Invite</Text>
+          </TouchableOpacity>
+
+          {onCancel ? (
+            <TouchableOpacity
+              onPress={() => void onCancel(duel)}
+              style={styles.inlineButtonDanger}
+            >
+              <Text style={styles.inlineButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
 
+function Chip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.chip, selected && styles.chipSelected]}
+    >
+      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { padding: 20, flex: 1, backgroundColor: "#fff" },
-  center: {
+  safeArea: {
     flex: 1,
-    justifyContent: "center",
+    backgroundColor: C.bg,
+  },
+  scroll: {
+    padding: 16,
+    gap: 12,
+    paddingBottom: 44,
+  },
+  centered: {
+    flex: 1,
     alignItems: "center",
-    padding: 40,
+    justifyContent: "center",
+    paddingHorizontal: 20,
   },
   header: {
+    fontFamily: "monospace",
+    fontSize: 13,
+    letterSpacing: 2,
+    color: C.mana,
+    textTransform: "uppercase",
+  },
+  sub: {
+    color: C.slate500,
+    marginTop: 8,
+    fontFamily: "monospace",
+    fontSize: 11,
+    textTransform: "uppercase",
+  },
+  rowBetween: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
-  },
-  title: { fontSize: 24, fontWeight: "bold" },
-  badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
-  badgeText: { fontSize: 12, fontWeight: "600" },
-  card: {
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-  },
-  row: {
-    flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    gap: 10,
   },
-  label: { color: "#6b7280", fontSize: 14 },
-  value: { fontWeight: "500", fontSize: 14 },
-  actions: { gap: 12 },
-  hint: {
-    fontSize: 12,
-    color: "#6b7280",
-    textAlign: "center",
+  sectionLabel: {
+    fontFamily: "monospace",
+    fontSize: 10,
+    color: C.mana,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  livePill: {
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: C.manaDim,
+  },
+  livePillText: {
+    color: C.mana,
+    fontSize: 10,
+    fontFamily: "monospace",
+    letterSpacing: 1,
+  },
+  topActions: {
+    marginTop: 10,
+  },
+  list: {
+    gap: 10,
+  },
+  empty: {
+    color: C.slate600,
     fontStyle: "italic",
-    marginTop: 4,
+    fontSize: 12,
   },
-  loadingText: { marginTop: 12, color: "#6b7280" },
-  errorText: { fontSize: 18, fontWeight: "600", color: "#dc2626" },
-  debug: {
-    marginTop: 32,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+  card: {
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderRadius: 6,
+    padding: 12,
+    gap: 8,
   },
-  debugText: { fontSize: 10, color: "#9ca3af", fontFamily: "monospace" },
+  compactCard: {
+    opacity: 0.8,
+  },
+  cardTitle: {
+    color: C.white,
+    fontFamily: "monospace",
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  status: {
+    color: C.slate400,
+    fontFamily: "monospace",
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  statusActive: {
+    color: C.green,
+  },
+  metaRow: {
+    gap: 4,
+  },
+  meta: {
+    color: C.slate400,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
+  inlineActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  inlineButton: {
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+    backgroundColor: C.manaDim,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+  },
+  inlineButtonDanger: {
+    borderWidth: 1,
+    borderColor: C.purpleBorder,
+    backgroundColor: C.purpleDim,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+  },
+  inlineButtonText: {
+    color: C.white,
+    fontFamily: "monospace",
+    fontSize: 10,
+    textTransform: "uppercase",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    justifyContent: "center",
+    padding: 18,
+  },
+  modalCard: {
+    backgroundColor: "rgba(6,15,28,0.98)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+    padding: 18,
+    gap: 10,
+  },
+  modalTitle: {
+    color: C.mana,
+    fontSize: 12,
+    fontFamily: "monospace",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  modalLabel: {
+    color: C.slate400,
+    fontSize: 11,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 6,
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: C.slate700,
+    borderRadius: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "transparent",
+  },
+  chipSelected: {
+    borderColor: C.mana,
+    backgroundColor: C.manaDim,
+  },
+  chipText: {
+    color: C.slate400,
+    fontFamily: "monospace",
+    fontSize: 11,
+    textTransform: "uppercase",
+  },
+  chipTextSelected: {
+    color: C.mana,
+  },
+  actionStack: {
+    gap: 10,
+  },
 });
