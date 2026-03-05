@@ -14,6 +14,16 @@ pub mod d_arena {
 
     use super::*;
 
+    pub fn initialze_config(
+        ctx: Context<InitializeConfig>,
+        backend_pubkey: [u8; 32],
+        treasury: Pubkey,
+        fee_bps: u16,
+    ) -> Result<()> {
+        ctx.accounts
+            .handler(backend_pubkey, treasury, fee_bps, &ctx.bumps)
+    }
+
     pub fn create_duel(
         ctx: Context<CreateDuel>,
         duel_nonce: u64,
@@ -39,13 +49,7 @@ pub mod d_arena {
         ctx.accounts.handler(result, &ctx.bumps)
     }
 
-    pub fn initialze_config(
-        ctx: Context<InitializeConfig>,
-        backend_pubkey: [u8; 32],
-        treasury: Pubkey,
-        fee_bps: u16,
-    ) -> Result<()> {
-        ctx.accounts
-            .handler(backend_pubkey, treasury, fee_bps, &ctx.bumps)
+    pub fn redeem_vault(ctx: Context<RedeemVault>) -> Result<()> {
+        ctx.accounts.handler()
     }
 }

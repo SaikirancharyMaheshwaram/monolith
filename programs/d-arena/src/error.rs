@@ -44,4 +44,8 @@ pub enum DuelError {
     ProgramDataMismatch,
     #[msg("Signer is not the program upgrade authority")]
     UpgradeAuthorityMismatch,
+    #[msg("Vault is still locked — win a duel first to unlock")]
+    VaultStillLocked,
+    #[msg("Nothing to redeem — vault is empty")]
+    NothingToRedeem,
 }
