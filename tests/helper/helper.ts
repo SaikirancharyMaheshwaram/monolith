@@ -116,7 +116,7 @@ export async function expectAnchorError(
     throw new Error(`Expected error "${errorCode}" but transaction succeeded`);
   } catch (err) {
     if (err instanceof anchor.AnchorError) {
-      console.log(err.toString());
+      // console.log(err.toString());
       expect(err.error.errorCode.code).to.equal(
         errorCode,
         `Expected "${errorCode}" but got "${err.error.errorCode.code}"`

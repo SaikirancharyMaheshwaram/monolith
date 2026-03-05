@@ -1132,3 +1132,201 @@ describe("settleDuel", () => {
     );
   });
 });
+
+describe("redeemVault", () => {
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+  const program = anchor.workspace.dArena as Program<DArena>;
+  const conn = provider.connection;
+  const stakeAmount = new anchor.BN(0.1 * LAMPORTS_PER_SOL);
+  const playerA = creator;
+  const playerB = opponent;
+
+  // Create duel, join, settle
+  async function playDuel(
+    creator: Keypair,
+    opponent: Keypair,
+    caller: Keypair,
+    resultKey: "winner" | "loser" | "draw" | "bothLost",
+    resultByte: number
+  ): Promise<void> {
+    const [creatorVault] = getVaultPda(program, creator.publicKey);
+    const [opponentVault] = getVaultPda(program, opponent.publicKey);
+
+    const nonce = getNonce();
+    const [duelPda] = getDuelPda(program, creator.publicKey, nonce);
+    const [escrowPda] = getEscrowPda(program, duelPda);
+    const { startTime, endTime } = streakWindow(DURATIONS.oneWeek);
+
+    const createTx = await program.methods
+      .createDuel(nonce, stakeAmount, startTime, endTime)
+      .accounts({
+        creator: creator.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([creator])
+      .rpc({ commitment: "confirmed" });
+    logTransactionResult("create tx:", createTx);
+
+    const joinTx = await program.methods
+      .joinDuel()
+      .accounts({
+        opponent: opponent.publicKey,
+        duel: duelPda,
+        escrow: escrowPda,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([opponent])
+      .rpc({ commitment: "confirmed" });
+    logTransactionResult("join duel tx:", joinTx);
+
+    const duel = await program.account.duel.fetch(duelPda);
+    const duelId = new anchor.BN(duel.duelId.toString());
+    const nonce_ = new anchor.BN(duel.settlementNonce.toString());
+    const message = buildMessage(duelId, caller.publicKey, resultByte, nonce_);
+    const sig = nacl.sign.detached(message, SERVER_KEYPAIR.secretKey);
+
+    const ed25519Ix = Ed25519Program.createInstructionWithPublicKey({
+      publicKey: SERVER_KEYPAIR.publicKey.toBytes(),
+      message,
+      signature: sig,
+    });
+
+    const settleIx = await program.methods
+      .settleDuel({ [resultKey]: {} } as any)
+      .accounts({
+        user: caller.publicKey,
+        duel: duelPda,
+        config: configPda,
+        escrow: escrowPda,
+        creatorAccount: creator.publicKey,
+        opponentAccount: opponent.publicKey,
+        creatorVault,
+        opponentVault,
+        treasury: TREASURY,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .instruction();
+
+    const settleTx = await sendAndConfirmTransaction(
+      conn,
+      new Transaction()
+        .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+        .add(ed25519Ix)
+        .add(settleIx),
+      [caller]
+    );
+    logTransactionResult("settle tx:", settleTx);
+  }
+
+  it("Step 1 — playerA loses to playerB → vaultA locked", async () => {
+    // playerA loses → vaultA gets 25% locked
+    await playDuel(playerA, playerB, playerA, "loser", 1);
+
+    const vault = await program.account.redemptionVault.fetch(creatorVault);
+    expect(vault.isLocked).to.be.true;
+
+    console.log(`  vaultA.isLocked: ${vault.isLocked}`);
+  });
+
+  it("Step 2 — playerA tries to redeem → VaultStillLocked", async () => {
+    // playerA lost but hasn't won yet -> cannot redeem
+    await expectAnchorError(
+      program.methods
+        .redeemVault()
+        .accounts({
+          owner: playerA.publicKey,
+          vault: creatorVault,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([playerA])
+        .rpc(),
+      "VaultStillLocked"
+    );
+    console.log("  cannot redeem while locked");
+  });
+
+  it(" Step 3 — playerA wins against playerB → vaultA unlocked", async () => {
+    // playerA wins -> settle_duel unlocks vaultA
+    await playDuel(playerA, playerB, playerA, "winner", 0);
+
+    const vault = await program.account.redemptionVault.fetch(creatorVault);
+    expect(vault.isLocked).to.be.false; //  unlocked!
+
+    console.log(`  vaultA.isLocked: ${vault.isLocked}`);
+    console.log(
+      `  vaultA funds: ${
+        vault.lockedLamports.toNumber() / LAMPORTS_PER_SOL
+      } SOL`
+    );
+  });
+
+  it("Step 4 — playerA redeems vault → receives funds", async () => {
+    const playerABefore = await conn.getBalance(playerA.publicKey);
+    const vaultBefore = await conn.getBalance(creatorVault);
+
+    const tx = await program.methods
+      .redeemVault()
+      .accounts({
+        owner: playerA.publicKey,
+        vault: creatorVault,
+        systemProgram: SYSTEM_PROGRAM,
+      })
+      .signers([playerA])
+      .rpc({ commitment: "confirmed" });
+
+    logTransactionResult("redeem vault", tx);
+
+    const playerAAfter = await conn.getBalance(playerA.publicKey);
+    const vaultFinal = await program.account.redemptionVault.fetch(
+      creatorVault
+    );
+
+    // vault is now empty and unlocked
+    expect(vaultFinal.lockedLamports.toNumber()).to.equal(0);
+    expect(vaultFinal.isLocked).to.be.false;
+
+    console.log(
+      `  playerA gained: ${
+        (playerAAfter - playerABefore) / LAMPORTS_PER_SOL
+      } SOL`
+    );
+    console.log(`  vault drained: ${vaultBefore / LAMPORTS_PER_SOL} → 0 SOL`);
+  });
+  it("Step 5 — playerA tries to redeem again → NothingToRedeem", async () => {
+    // vault is empty now
+    await expectAnchorError(
+      program.methods
+        .redeemVault()
+        .accounts({
+          owner: playerA.publicKey,
+          vault: creatorVault,
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([playerA])
+        .rpc(),
+      "NothingToRedeem"
+    );
+    console.log("  double redeem rejected");
+  });
+
+  it("Step 6 — playerB tries to redeem playerA vault → NotOwner", async () => {
+    // playerB cannot redeem vaultA — wrong owner
+    await expectAnchorError(
+      program.methods
+        .redeemVault()
+        .accounts({
+          owner: playerB.publicKey, // ← wrong
+          vault: creatorVault, // playerA's vault
+          systemProgram: SYSTEM_PROGRAM,
+        })
+        .signers([playerB])
+        .rpc(),
+      "ConstraintSeeds"
+    );
+    console.log("  wrong owner rejected");
+  });
+});
