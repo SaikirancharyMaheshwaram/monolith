@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Strivioz",
+    "slug": "Strivioz",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "Strivioz",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -41,11 +41,19 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cb51bb2e-18d9-4bca-b02c-80daaca4e982"
+      },
+      "CONVEX_URL": "https://rugged-alpaca-589.convex.cloud"
     }
   }
 }

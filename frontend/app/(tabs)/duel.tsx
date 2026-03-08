@@ -4,13 +4,23 @@ import { SystemWindow } from "@/components/SystemWindow";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
+import {
+  formatDuelStatus,
+  formatStartTime,
+  getDuelDescription,
+  getDuelTitle,
+} from "@/lib/duel-copy";
 import { useWallet } from "@/lib/use-wallet";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { useMutation, useQuery } from "convex/react";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Modal,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -21,8 +31,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const STAKES = [0.1, 0.5, 1, 2];
-const START_MINUTES = [10, 30, 60, 120];
+const QUICK_STAKES = [0.1, 0.5, 1, 2];
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+type PickerState =
+  | { field: "start" | "end"; mode: "date" | "time" }
+  | null;
 
 type FeedbackState = {
   visible: boolean;
@@ -45,8 +60,14 @@ export default function DuelHubScreen() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showContractModal, setShowContractModal] = useState(false);
-  const [stakeAmount, setStakeAmount] = useState(STAKES[2]);
-  const [startInMins, setStartInMins] = useState(START_MINUTES[1]);
+  const defaultStart = new Date(Date.now() + HOUR_MS);
+  const defaultEnd = new Date(defaultStart.getTime() + 7 * DAY_MS);
+  const [stakeInput, setStakeInput] = useState("1");
+  const [startAt, setStartAt] = useState(defaultStart);
+  const [endAt, setEndAt] = useState(defaultEnd);
+  const [duelTitle, setDuelTitle] = useState("");
+  const [duelDescription, setDuelDescription] = useState("");
+  const [picker, setPicker] = useState<PickerState>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [joinInviteLoading, setJoinInviteLoading] = useState(false);
   const [manualDuelId, setManualDuelId] = useState(
@@ -104,6 +125,7 @@ export default function DuelHubScreen() {
 
   const inviteOnchainDuelAddress = inviteDuel?.onchainDuelAddress;
   const inviteOnchainEscrowAddress = inviteDuel?.onchainEscrowAddress;
+  const stakeAmount = Number.parseFloat(stakeInput);
 
   const openFeedback = (
     tone: FeedbackState["tone"],
@@ -119,22 +141,94 @@ export default function DuelHubScreen() {
     });
   };
 
+  const updateDatePart = (
+    field: "start" | "end",
+    mode: "date" | "time",
+    nextValue: Date,
+  ) => {
+    const source = field === "start" ? startAt : endAt;
+    const merged = new Date(source);
+
+    if (mode === "date") {
+      merged.setFullYear(
+        nextValue.getFullYear(),
+        nextValue.getMonth(),
+        nextValue.getDate(),
+      );
+    } else {
+      merged.setHours(nextValue.getHours(), nextValue.getMinutes(), 0, 0);
+    }
+
+    if (field === "start") {
+      setStartAt(merged);
+      if (endAt <= merged) {
+        setEndAt(new Date(merged.getTime() + DAY_MS));
+      }
+      return;
+    }
+
+    setEndAt(merged);
+  };
+
+  const handlePickerChange = (
+    event: DateTimePickerEvent,
+    selectedValue?: Date,
+  ) => {
+    const currentPicker = picker;
+    setPicker(null);
+
+    if (!currentPicker || event.type === "dismissed" || !selectedValue) {
+      return;
+    }
+
+    updateDatePart(currentPicker.field, currentPicker.mode, selectedValue);
+  };
+
   const handleCreateInvite = async () => {
     if (!walletAddress) return;
+    if (!Number.isFinite(stakeAmount) || stakeAmount <= 0) {
+      openFeedback(
+        "error",
+        "Invalid stake",
+        "Enter a custom SOL amount greater than zero.",
+      );
+      return;
+    }
+    if (startAt.getTime() <= Date.now()) {
+      openFeedback(
+        "error",
+        "Invalid start time",
+        "Choose a start date and time in the future.",
+      );
+      return;
+    }
+    if (endAt.getTime() <= startAt.getTime()) {
+      openFeedback(
+        "error",
+        "Invalid end time",
+        "End date and time must be after the start.",
+      );
+      return;
+    }
 
     setCreateLoading(true);
-    const startTime = Date.now() + startInMins * 60 * 1000;
+    const startTime = startAt.getTime();
+    const endTime = endAt.getTime();
     let onChainDuel: Awaited<ReturnType<typeof wallet.createDuel>> | null = null;
     try {
       onChainDuel = await wallet.createDuel({
         stakeAmountSol: stakeAmount,
         startTimeMs: startTime,
+        endTimeMs: endTime,
       });
 
       const duelId = await createFriendDuel({
         player1: walletAddress,
         stakeAmount,
         startTime,
+        endTime,
+        title: duelTitle.trim() || undefined,
+        description: duelDescription.trim() || undefined,
         onchainDuelAddress: onChainDuel.duelAddress,
         onchainEscrowAddress: onChainDuel.escrowAddress,
         onchainProgramId: onChainDuel.programId,
@@ -143,6 +237,12 @@ export default function DuelHubScreen() {
       });
 
       setShowCreateModal(false);
+      setStakeInput("1");
+      const nextStart = new Date(Date.now() + HOUR_MS);
+      setStartAt(nextStart);
+      setEndAt(new Date(nextStart.getTime() + 7 * DAY_MS));
+      setDuelTitle("");
+      setDuelDescription("");
       openFeedback(
         "success",
         "Invite Forged",
@@ -284,9 +384,11 @@ export default function DuelHubScreen() {
         {resolvedInviteId && inviteDuel ? (
           <SystemWindow style={styles.inviteWindow}>
             <Text style={styles.sectionLabel}>Live Invite</Text>
-            <Text style={styles.inviteTitle}>{inviteDuel.stakeAmount} SOL friend duel</Text>
-            <Text style={styles.meta}>Starts: {inviteDuel.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}</Text>
-            <Text style={styles.meta}>Status: {inviteDuel.status}</Text>
+            <Text style={styles.inviteTitle}>{getDuelTitle(inviteDuel)}</Text>
+            <Text style={styles.meta}>{getDuelDescription(inviteDuel)}</Text>
+            <Text style={styles.meta}>Starts: {formatStartTime(inviteDuel.startTime)}</Text>
+            <Text style={styles.meta}>Ends: {formatStartTime(inviteDuel.endTime)}</Text>
+            <Text style={styles.meta}>Status: {formatDuelStatus(inviteDuel.status as any)}</Text>
             <Text style={styles.meta}>On-chain duel: {inviteDuel.onchainDuelAddress ? "Attached" : "Missing"}</Text>
             <View style={styles.actionStack}>
               <GateButton
@@ -348,28 +450,94 @@ export default function DuelHubScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Forge Invite Gate</Text>
-            <Text style={styles.modalLabel}>Stake</Text>
+            <Text style={styles.modalLabel}>Duel title</Text>
+            <TextInput
+              value={duelTitle}
+              onChangeText={setDuelTitle}
+              placeholder="Example: No Sugar Sprint"
+              placeholderTextColor={C.slate600}
+              style={styles.input}
+            />
+            <Text style={styles.modalLabel}>Duel description</Text>
+            <TextInput
+              value={duelDescription}
+              onChangeText={setDuelDescription}
+              placeholder="What both players are trying to do and why it matters"
+              placeholderTextColor={C.slate600}
+              multiline
+              style={[styles.input, styles.textarea]}
+            />
+            <Text style={styles.modalLabel}>Stake (SOL)</Text>
+            <TextInput
+              value={stakeInput}
+              onChangeText={setStakeInput}
+              placeholder="1.25"
+              placeholderTextColor={C.slate600}
+              keyboardType="decimal-pad"
+              style={styles.input}
+            />
             <View style={styles.chipRow}>
-              {STAKES.map((value) => (
+              {QUICK_STAKES.map((value) => (
                 <Chip
                   key={value}
                   label={`${value} SOL`}
-                  selected={value === stakeAmount}
-                  onPress={() => setStakeAmount(value)}
+                  selected={Number(stakeInput) === value}
+                  onPress={() => setStakeInput(String(value))}
                 />
               ))}
             </View>
-            <Text style={styles.modalLabel}>Starts in</Text>
-            <View style={styles.chipRow}>
-              {START_MINUTES.map((value) => (
-                <Chip
-                  key={value}
-                  label={`${value}m`}
-                  selected={value === startInMins}
-                  onPress={() => setStartInMins(value)}
-                />
-              ))}
+            <Text style={styles.modalLabel}>Start date and time</Text>
+            <View style={styles.scheduleGrid}>
+              <TouchableOpacity
+                style={styles.scheduleButton}
+                onPress={() => setPicker({ field: "start", mode: "date" })}
+              >
+                <Text style={styles.scheduleLabel}>Date</Text>
+                <Text style={styles.scheduleValue}>
+                  {startAt.toLocaleDateString()}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.scheduleButton}
+                onPress={() => setPicker({ field: "start", mode: "time" })}
+              >
+                <Text style={styles.scheduleLabel}>Time</Text>
+                <Text style={styles.scheduleValue}>
+                  {startAt.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
             </View>
+            <Text style={styles.modalLabel}>End date and time</Text>
+            <View style={styles.scheduleGrid}>
+              <TouchableOpacity
+                style={styles.scheduleButton}
+                onPress={() => setPicker({ field: "end", mode: "date" })}
+              >
+                <Text style={styles.scheduleLabel}>Date</Text>
+                <Text style={styles.scheduleValue}>
+                  {endAt.toLocaleDateString()}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.scheduleButton}
+                onPress={() => setPicker({ field: "end", mode: "time" })}
+              >
+                <Text style={styles.scheduleLabel}>Time</Text>
+                <Text style={styles.scheduleValue}>
+                  {endAt.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.hint}>
+              Start is when daily check-ins begin. End is the final cutoff for
+              scoring the duel.
+            </Text>
             <View style={styles.actionStack}>
               <GateButton
                 label={createLoading ? "Forging..." : "Create Invite"}
@@ -381,6 +549,18 @@ export default function DuelHubScreen() {
           </View>
         </View>
       </Modal>
+
+      {picker ? (
+        <DateTimePicker
+          value={picker.field === "start" ? startAt : endAt}
+          mode={picker.mode}
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          minimumDate={
+            picker.field === "start" ? new Date(Date.now() + 60_000) : startAt
+          }
+          onChange={handlePickerChange}
+        />
+      ) : null}
 
       <Modal transparent visible={showContractModal} animationType="fade">
         <View style={styles.modalOverlay}>
@@ -455,11 +635,13 @@ function DuelCard({
   return (
     <View style={[styles.card, compact && styles.compactCard]}>
       <View style={styles.rowBetween}>
-        <Text style={styles.cardTitle}>{duel.mode} GATE</Text>
-        <Text style={[styles.status, statusTone]}>{duel.status}</Text>
+        <Text style={styles.cardTitle}>{getDuelTitle(duel)}</Text>
+        <Text style={[styles.status, statusTone]}>{formatDuelStatus(duel.status as any)}</Text>
       </View>
+      <Text style={styles.meta}>{getDuelDescription(duel)}</Text>
       <Text style={styles.meta}>Stake: {duel.stakeAmount} SOL</Text>
-      <Text style={styles.meta}>Start: {duel.startTime ? new Date(duel.startTime).toLocaleString() : "TBD"}</Text>
+      <Text style={styles.meta}>Start: {formatStartTime(duel.startTime)}</Text>
+      <Text style={styles.meta}>End: {formatStartTime(duel.endTime)}</Text>
       <Text style={styles.meta}>Duel ID: {String(duel._id)}</Text>
       <View style={styles.inlineActions}>
         <TouchableOpacity onPress={onPrimaryPress} style={styles.inlineButton}>
@@ -568,6 +750,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
+  },
+  textarea: {
+    minHeight: 92,
+    textAlignVertical: "top",
+  },
+  scheduleGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 6,
+  },
+  scheduleButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    padding: 12,
+    gap: 4,
+  },
+  scheduleLabel: {
+    color: C.slate500,
+    fontFamily: "monospace",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  scheduleValue: {
+    color: C.white,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
   },
   hint: { color: C.slate500, fontSize: 12, lineHeight: 18, marginTop: 10 },
   meta: { color: C.slate400, fontSize: 12, lineHeight: 18 },

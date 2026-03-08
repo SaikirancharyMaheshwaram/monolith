@@ -8,6 +8,7 @@ import { CHARACTER_OPTIONS, CharacterId } from "@/components/characters";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { getDuelDescription, getDuelTitle } from "@/lib/duel-copy";
 import { useWallet } from "@/lib/use-wallet";
 import { useArenaStore } from "@/stores/arenaStore";
 import { useDuelStore } from "@/stores/duelStore";
@@ -36,14 +37,14 @@ const STORY_STEPS = [
   { title: "Settle", detail: "When the backend resolves the winner, the contract pays the final split." },
 ];
 const LIVE_FEED = [
-  "Escrow creates real pressure for both players.",
-  "Daily proof is fast because the blockchain stays untouched during check-ins.",
-  "Settlement is only enabled after the duel is resolved.",
+  "Escrow creates real pressure because the stake is already locked.",
+  "Every duel now carries a title and a mission so the board feels readable.",
+  "Daily proof stays fast off-chain and only final payout touches the contract.",
 ];
 const MISSION_BOARD = [
-  { title: "Create duel", status: "READY" },
-  { title: "Hit daily streak", status: "TRACKED" },
-  { title: "Settle winner", status: "LOCKED" },
+  { title: "Name the duel", status: "READY" },
+  { title: "Keep daily proof", status: "TRACKED" },
+  { title: "Settle the winner", status: "LOCKED" },
 ];
 
 export default function HomeScreen() {
@@ -79,6 +80,8 @@ export default function HomeScreen() {
   const [showArenaModal, setShowArenaModal] = useState(false);
   const [stake, setStake] = useState(STAKES[2]);
   const [startDelayMins, setStartDelayMins] = useState(START_DELAY_OPTIONS[0]);
+  const [duelTitle, setDuelTitle] = useState("");
+  const [duelDescription, setDuelDescription] = useState("");
   const [arenaMessage, setArenaMessage] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanning, setScanning] = useState(false);
@@ -186,9 +189,17 @@ export default function HomeScreen() {
       player1: walletAddress,
       stakeAmount: stake,
       startTime,
+      title:
+        duelTitle.trim() ||
+        `Discipline Run • ${stake} SOL`,
+      description:
+        duelDescription.trim() ||
+        "A focused streak challenge with real escrow and daily proof.",
     });
 
     await fetchOpenDuels(user._id);
+    setDuelTitle("");
+    setDuelDescription("");
     setArenaMessage("Challenge forged. Open the duel board to share the invite.");
   };
 
@@ -286,7 +297,7 @@ export default function HomeScreen() {
 
         {hasActiveDuel && activeDuel && (
           <QuestCard
-            title="7-Day Discipline Run"
+            title={getDuelTitle(activeDuel as any)}
             opponentName={activeDuel.player2 ? `#${String(activeDuel.player2).slice(0, 6)}` : "Awaiting Hunter"}
             stakeLabel={`${activeDuel.stakeAmount} SOL`}
             progress={Math.min(1, duelProgressDays / 7)}
@@ -399,6 +410,24 @@ export default function HomeScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Forge a Duel</Text>
+            <Text style={styles.modalLabel}>Duel title</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Example: 7-Day Study Sprint"
+              placeholderTextColor={C.slate600}
+              value={duelTitle}
+              onChangeText={setDuelTitle}
+            />
+
+            <Text style={styles.modalLabel}>Duel description</Text>
+            <TextInput
+              style={[styles.input, styles.textarea]}
+              placeholder="Explain the habit, rules, or why this duel matters"
+              placeholderTextColor={C.slate600}
+              value={duelDescription}
+              onChangeText={setDuelDescription}
+              multiline
+            />
             <Text style={styles.modalLabel}>Pick stake</Text>
             <View style={styles.chipRow}>
               {STAKES.map((s) => {
@@ -433,7 +462,7 @@ export default function HomeScreen() {
 
             <View style={styles.energyStrip}>
               <Text style={styles.energyTitle}>Game loop</Text>
-              <Text style={styles.energyText}>Create escrow, join gate, keep daily proof, settle when resolved.</Text>
+              <Text style={styles.energyText}>Name the mission, create escrow, keep daily proof, settle when resolved.</Text>
             </View>
 
             {scanning ? (
@@ -467,6 +496,8 @@ export default function HomeScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Invite Found</Text>
+            <Text style={styles.modalLabel}>{getDuelTitle(inviteDuel)}</Text>
+            <Text style={styles.modalLabel}>{getDuelDescription(inviteDuel)}</Text>
             <Text style={styles.modalLabel}>Opponent: #{String(inviteDuel?.player1 ?? "").slice(0, 6)}</Text>
             <Text style={styles.modalLabel}>Stake: {inviteDuel?.stakeAmount ?? 0} SOL</Text>
             <Text style={styles.modalLabel}>
@@ -745,6 +776,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: C.white,
     backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  textarea: {
+    minHeight: 88,
+    textAlignVertical: "top",
   },
   characterGrid: {
     flexDirection: "row",

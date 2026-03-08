@@ -63,7 +63,7 @@ const VAULT_SEED = Buffer.from("vault");
 const BPF_UPGRADEABLE_LOADER_PROGRAM_ID = new PublicKey(
   "BPFLoaderUpgradeab1e11111111111111111111111",
 );
-const DUEL_DURATION_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_DUEL_DURATION_SECONDS = 7 * 24 * 60 * 60;
 const CREATE_DUEL_MIN_START_OFFSET_SECONDS = 60;
 const DUEL_ACCOUNT_SPACE = 157;
 const DEFAULT_FEE_LAMPORTS = 10_000;
@@ -71,6 +71,7 @@ const DEFAULT_FEE_LAMPORTS = 10_000;
 type CreateOnChainDuelInput = {
   stakeAmountSol: number;
   startTimeMs: number;
+  endTimeMs?: number;
   duelNonce?: number;
 };
 
@@ -620,6 +621,7 @@ export function useWallet(): WalletHook {
     async ({
       stakeAmountSol,
       startTimeMs,
+      endTimeMs,
       duelNonce,
     }: CreateOnChainDuelInput) => {
       if (!publicKey) throw new Error("Wallet not connected");
@@ -634,7 +636,16 @@ export function useWallet(): WalletHook {
         requestedStartSeconds,
         nowSeconds + CREATE_DUEL_MIN_START_OFFSET_SECONDS,
       );
-      const endTimeSeconds = startTimeSeconds + DUEL_DURATION_SECONDS;
+      const requestedEndSeconds = endTimeMs
+        ? Math.floor(endTimeMs / 1000)
+        : startTimeSeconds + DEFAULT_DUEL_DURATION_SECONDS;
+      const endTimeSeconds = Math.max(
+        requestedEndSeconds,
+        startTimeSeconds + 60,
+      );
+      if (endTimeSeconds <= startTimeSeconds) {
+        throw new Error("End time must be after start time");
+      }
       const duelNonceBuffer = writeUInt64LE(nonce);
 
       const [duelPda] = PublicKey.findProgramAddressSync(

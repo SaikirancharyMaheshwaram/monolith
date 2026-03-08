@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Habit Duel · Quest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            purple: '#a78bfa',   // soft lavender
+                            dark: '#1e1b2e',
+                            lime: '#d9f99d',
+                            limeDark: '#84cc16',
+                            yellow: '#fef9c3',
+                            blue: '#bae6fd',
+                            pink: '#fbcfe8',
+                            orange: '#fed7aa',
+                            mint: '#d1fae5',
+                            peach: '#ffe4e6'
+                        }
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'bounce-slow': 'bounce 3s infinite',
+                        'pulse-soft': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'spin-slow': 'spin 8s linear infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-12px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f1f5f9;
+            color: #1e293b;
+            font-family: 'Outfit', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .mobile-frame {
+            width: 100%;
+            max-width: 400px;
+            height: 820px;
+            background: #fff;
+            border-radius: 44px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.25);
+            border: 8px solid #fff;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .screen {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.95);
+            background: #f8fafc; /* base */
+        }
+
+        .screen.active {
+            opacity: 1;
+            pointer-events: all;
+            transform: scale(1);
+            z-index: 10;
+        }
+
+        .screen.prev {
+            transform: translateX(-100%);
+            opacity: 0;
+        }
+        
+        .screen.next {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+
+        .habit-card {
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .habit-card:active {
+            transform: scale(0.96);
+        }
+
+        .notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 28px;
+            background: #000;
+            border-bottom-left-radius: 18px;
+            border-bottom-right-radius: 18px;
+            z-index: 100;
+        }
+
+        .btn-primary {
+            background: #1e1b2e;
+            color: white;
+            border-radius: 100px;
+            padding: 16px 32px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 0 #0a0a14;
+            transition: all 0.1s ease;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-primary:active {
+            transform: translateY(4px);
+            box-shadow: 0 4px 0 #0a0a14;
+        }
+
+        .btn-soft {
+            background: white;
+            border-radius: 60px;
+            padding: 14px 20px;
+            font-weight: 600;
+            box-shadow: 0 4px 0 #e2e8f0;
+            transition: all 0.1s;
+        }
+        .btn-soft:active {
+            transform: translateY(4px);
+            box-shadow: 0 1px 0 #e2e8f0;
+        }
+
+        .timer-digits {
+            font-family: 'Outfit', monospace;
+            background: linear-gradient(135deg, #1e1b2e, #2d2a4a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .char-face {
+            animation: blink 4s infinite;
+        }
+        @keyframes blink {
+            0%, 96%, 100% { transform: scaleY(1); }
+            98% { transform: scaleY(0.1); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="mobile-frame bg-white">
+    <div class="notch"></div>
+
+    <!-- SCREEN 1: ONBOARDING (soft duel twist) -->
+    <div id="screen-onboarding" class="screen active bg-gradient-to-br from-brand-purple/90 to-indigo-200 p-8 justify-between relative overflow-hidden">
+        <!-- decorative blobs -->
+        <div class="absolute top-[-20%] right-[-10%] w-64 h-64 bg-white/20 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-[10%] left-[-20%] w-72 h-72 bg-brand-lime/30 rounded-full blur-3xl"></div>
+
+        <div class="relative z-10 pt-12">
+            <div class="text-white/80 text-sm font-medium mb-2">⚔️ Duel your habits</div>
+            <h1 class="text-5xl font-extrabold text-white leading-tight mb-6">
+                Stake, commit,<br>
+                <span class="text-brand-lime">win together</span>
+            </h1>
+            
+            <!-- Mascot with shield and sword (custom SVG) -->
+            <div class="w-full h-64 relative flex justify-center items-center animate-float">
+                <svg width="210" height="210" viewBox="0 0 210 210" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- shadow -->
+                    <ellipse cx="105" cy="185" rx="60" ry="12" fill="rgba(0,0,0,0.1)" />
+                    <!-- body (round) -->
+                    <circle cx="105" cy="100" r="75" fill="#FED7AA" stroke="#fff" stroke-width="4"/>
+                    <!-- face -->
+                    <g class="char-face" transform-origin="105 90">
+                        <!-- goggles (duel style) -->
+                        <path d="M70 85 Q90 80 105 85 T140 85" stroke="#1e1b2e" stroke-width="5" fill="none" stroke-linecap="round"/>
+                        <circle cx="80" cy="90" r="10" fill="#1e1b2e"/>
+                        <circle cx="130" cy="90" r="10" fill="#1e1b2e"/>
+                        <circle cx="80" cy="90" r="4" fill="white"/>
+                        <circle cx="130" cy="90" r="4" fill="white"/>
+                        <!-- determined mouth -->
+                        <path d="M90 120 Q105 130 120 120" stroke="#1e1b2e" stroke-width="4" stroke-linecap="round"/>
+                    </g>
+                    <!-- sword in one hand -->
+                    <path d="M155 110 L185 70" stroke="#94a3b8" stroke-width="12" stroke-linecap="round"/>
+                    <rect x="177" y="57" width="18" height="30" rx="4" fill="#64748b" transform="rotate(45 186 72)" />
+                    <!-- shield in other hand -->
+                    <path d="M40 110 L20 90 L30 70 L60 70 L70 90 L50 110" fill="#475569" stroke="#fff" stroke-width="2"/>
+                    <!-- legs -->
+                    <path d="M80 160 L70 185" stroke="#FED7AA" stroke-width="14" stroke-linecap="round"/>
+                    <path d="M130 160 L140 185" stroke="#FED7AA" stroke-width="14" stroke-linecap="round"/>
+                    <ellipse cx="70" cy="190" rx="10" ry="5" fill="#1e1b2e"/>
+                    <ellipse cx="140" cy="190" rx="10" ry="5" fill="#1e1b2e"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="relative z-10 space-y-4 pb-8">
+            <button onclick="goToScreen('screen-dashboard')" class="btn-primary">
+                Start duel journey
+            </button>
+            <div class="text-center">
+                <button class="text-white/70 text-sm font-medium hover:text-white transition">I already have an account</button>
+            </div>
+            <p class="text-white/50 text-[10px] text-center leading-relaxed px-8">
+                By continuing you agree to the Duelist's Code · SOL escrow terms
+            </p>
+        </div>
+    </div>
+
+    <!-- SCREEN 2: DASHBOARD (main hub) -->
+    <div id="screen-dashboard" class="screen bg-[#f8fafc]">
+        <!-- Header -->
+        <div class="pt-12 px-6 pb-4 bg-white sticky top-0 z-20 shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <p class="text-gray-400 text-sm font-medium">⚔️ ready,</p>
+                    <h1 class="text-3xl font-extrabold text-slate-800">Alex</h1>
+                </div>
+                <div class="flex gap-2">
+                    <button class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
+                        <i class="fa-regular fa-bell"></i>
+                    </button>
+                    <div class="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border-2 border-white">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alex&backgroundColor=ffdfbf" alt="Profile">
+                    </div>
+                </div>
+            </div>
+            <!-- Weekly streak (like habit flow) -->
+            <div class="flex justify-between items-center gap-2 overflow-x-auto pb-1">
+                <div class="flex flex-col items-center min-w-[44px]"><span class="text-xs text-gray-400">M</span><div class="w-9 h-9 rounded-2xl bg-brand-lime flex items-center justify-center font-bold">11</div></div>
+                <div class="flex flex-col items-center min-w-[44px]"><span class="text-xs text-gray-400">T</span><div class="w-9 h-9 rounded-2xl bg-brand-lime flex items-center justify-center font-bold">12</div></div>
+                <div class="flex flex-col items-center min-w-[44px]"><span class="text-xs text-white">W</span><div class="w-9 h-9 rounded-2xl bg-slate-800 text-white flex items-center justify-center font-bold shadow">13</div></div>
+                <div class="flex flex-col items-center min-w-[44px]"><span class="text-xs text-gray-400">T</span><div class="w-9 h-9 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">14</div></div>
+                <div class="flex flex-col items-center min-w-[44px]"><span class="text-xs text-gray-400">F</span><div class="w-9 h-9 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">15</div></div>
+                <div class="flex flex-col items-center min-w-[44px]"><span class="text-xs text-gray-400">S</span><div class="w-9 h-9 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">16</div></div>
+            </div>
+        </div>
+
+        <!-- main content -->
+        <div class="p-5 space-y-5 pb-28">
+            <!-- Active duel card (big) -->
+            <div onclick="goToScreen('screen-duel')" class="bg-white rounded-3xl p-5 shadow-md border border-slate-100 habit-card">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2"><i class="fa-solid fa-crosshairs text-amber-500"></i><span class="font-bold">active duel</span></div>
+                    <span class="bg-amber-100 text-amber-700 text-xs px-3 py-1 rounded-full font-medium">pot 1.0 SOL</span>
+                </div>
+                <!-- two opponents side by side -->
+                <div class="flex items-center justify-between">
+                    <div class="flex flex-col items-center"><div class="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-800 text-xl font-bold">A</div><span class="text-sm font-medium mt-1">Alex</span><span class="text-xs bg-emerald-100 px-2 py-0.5 rounded-full mt-1">0.5 SOL</span><div class="flex items-center gap-1 mt-1"><span class="w-2 h-2 rounded-full bg-green-500"></span><span class="text-xs text-gray-500">checked</span></div></div>
+                    <div class="text-lg font-black text-slate-300">VS</div>
+                    <div class="flex flex-col items-center"><div class="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-800 text-xl font-bold">J</div><span class="text-sm font-medium mt-1">Jordan</span><span class="text-xs bg-amber-100 px-2 py-0.5 rounded-full mt-1">0.5 SOL</span><div class="flex items-center gap-1 mt-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span><span class="text-xs text-gray-500">pending</span></div></div>
+                </div>
+                <div class="mt-4 bg-slate-50 p-3 rounded-xl flex items-center justify-between">
+                    <span class="text-sm text-gray-500"><i class="fa-regular fa-clock mr-1"></i>24h window</span>
+                    <span class="font-mono font-bold text-indigo-800" id="dashboardTimer">14:22:37</span>
+                </div>
+            </div>
+
+            <!-- Redemption vault (golden) -->
+            <div class="bg-gradient-to-r from-amber-100 to-amber-200 rounded-3xl p-5 flex items-center justify-between shadow-md">
+                <div class="flex items-center gap-3">
+                    <div class="w-14 h-14 rounded-2xl bg-amber-300 flex items-center justify-center text-amber-900"><i class="fa-solid fa-piggy-bank text-2xl"></i></div>
+                    <div><span class="font-bold text-amber-900">redemption vault</span><div class="text-2xl font-black">0.125 SOL</div><span class="text-xs text-amber-800/70"><i class="fa-solid fa-lock mr-1"></i>locked · win to unlock</span></div>
+                </div>
+                <button class="bg-amber-800/20 border border-amber-700 rounded-full px-4 py-2 text-sm font-semibold">unlock</button>
+            </div>
+
+            <!-- inventory/badges row (like habit flow) -->
+            <div class="bg-white p-4 rounded-3xl shadow-sm">
+                <h3 class="font-semibold mb-2 flex items-center gap-2"><i class="fa-regular fa-star"></i> loot & badges</h3>
+                <div class="flex gap-3 flex-wrap">
+                    <span class="bg-indigo-50 px-4 py-2 rounded-full text-sm"><i class="fa-solid fa-glasses mr-1"></i>Loreseeker</span>
+                    <span class="bg-emerald-50 px-4 py-2 rounded-full text-sm"><i class="fa-solid fa-shield"></i>Duelist lvl3</span>
+                    <span class="bg-amber-50 px-4 py-2 rounded-full text-sm"><i class="fa-solid fa-crown"></i>2 streak</span>
+                </div>
+            </div>
+
+            <!-- leaderboard mini -->
+            <div class="bg-white rounded-3xl p-4 shadow-sm">
+                <div class="flex justify-between items-center"><span class="font-semibold">🏆 duel leaderboard</span><a href="#" class="text-xs text-indigo-500">view all</a></div>
+                <div class="mt-3 space-y-2">
+                    <div class="flex justify-between items-center"><div class="flex gap-2"><span class="font-bold text-indigo-400">#1</span><span>Timothy Ball</span></div><span class="bg-emerald-50 px-2 py-1 rounded-full text-xs">21,780</span></div>
+                    <div class="flex justify-between items-center"><div class="flex gap-2"><span class="font-bold text-indigo-400">#2</span><span>Brody Bellson</span></div><span class="bg-emerald-50 px-2 py-1 rounded-full text-xs">19,231</span></div>
+                    <div class="flex justify-between items-center"><div class="flex gap-2"><span class="font-bold text-indigo-400">#3</span><span>Jack Nicklson</span></div><span class="bg-emerald-50 px-2 py-1 rounded-full text-xs">15,322</span></div>
+                </div>
+            </div>
+
+            <!-- daily / mastery challenges (like habit flow) -->
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-brand-blue p-4 rounded-3xl"><span class="text-xs font-medium text-indigo-600">DAILY</span><div class="text-lg font-bold">+200</div><div class="text-sm">check-in</div><div class="h-1.5 bg-white/60 rounded-full mt-2 w-2/3"></div></div>
+                <div class="bg-brand-lime p-4 rounded-3xl"><span class="text-xs font-medium text-emerald-600">MASTERY</span><div class="text-lg font-bold">+300</div><div class="text-sm">mind unlocked</div><div class="h-1.5 bg-white/60 rounded-full mt-2 w-2/5"></div></div>
+            </div>
+        </div>
+
+        <!-- bottom nav (exactly like habit flow) -->
+        <div class="absolute bottom-0 w-full bg-white border-t border-slate-100 px-6 py-3 flex justify-between items-center z-30 rounded-t-3xl shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.1)]">
+            <button class="text-slate-800 flex flex-col items-center"><i class="fa-solid fa-house text-xl"></i><span class="text-[10px] font-bold">Home</span></button>
+            <button class="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg -mt-8 border-4 border-[#f8fafc]"><i class="fa-solid fa-swords text-xl"></i></button>
+            <button class="text-slate-400 flex flex-col items-center"><i class="fa-solid fa-chart-pie text-xl"></i><span class="text-[10px] font-bold">Stats</span></button>
+        </div>
+    </div>
+
+    <!-- SCREEN 3: DUEL DETAIL (check‑in, escrow info) -->
+    <div id="screen-duel" class="screen bg-brand-mint/30 p-6 relative">
+        <!-- Top bar -->
+        <div class="flex justify-between items-center pt-8 mb-6">
+            <button onclick="goToScreen('screen-dashboard')" class="w-10 h-10 rounded-full bg-white/40 backdrop-blur-sm flex items-center justify-center text-slate-800">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h2 class="font-bold text-slate-800 text-lg">⚡ duel arena</h2>
+            <div class="w-10"></div>
+        </div>
+
+        <!-- Opponent card with health/stake -->
+        <div class="bg-white/70 backdrop-blur-md rounded-3xl p-5 shadow-md mb-5 border border-white/50">
+            <div class="flex items-center gap-4">
+                <div class="w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-200 to-amber-300 flex items-center justify-center text-3xl font-bold text-amber-800">J</div>
+                <div class="flex-1">
+                    <div class="flex items-center gap-2"><span class="font-bold text-lg">Jordan</span><span class="w-2 h-2 rounded-full bg-amber-400"></span><span class="text-xs text-gray-500">pending check-in</span></div>
+                    <div class="mt-2 flex items-center gap-2"><span class="text-sm">health</span><div class="h-2 flex-1 bg-slate-200 rounded-full"><div class="w-3/4 h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full"></div></div></div>
+                    <div class="flex justify-between mt-1"><span class="text-xs text-gray-500">stake 0.5 SOL</span><span class="text-xs font-medium">pot total: 1.0 SOL</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Your status -->
+        <div class="bg-white/70 backdrop-blur-md rounded-3xl p-5 shadow-md mb-6 border border-white/50">
+            <div class="flex items-center gap-4">
+                <div class="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-200 to-indigo-300 flex items-center justify-center text-3xl font-bold text-indigo-800">A</div>
+                <div class="flex-1">
+                    <div class="flex items-center gap-2"><span class="font-bold text-lg">Alex (you)</span><span class="w-2 h-2 rounded-full bg-green-500"></span><span class="text-xs text-green-600">checked in</span></div>
+                    <div class="mt-2 flex items-center gap-2"><span class="text-sm">health</span><div class="h-2 flex-1 bg-slate-200 rounded-full"><div class="w-full h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full"></div></div></div>
+                    <div class="flex justify-between mt-1"><span class="text-xs text-gray-500">your stake 0.5 SOL</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- countdown and check-in (gamified) -->
+        <div class="bg-slate-800/5 backdrop-blur-xl rounded-3xl p-6 text-center border border-white/30 mb-5">
+            <span class="text-sm text-slate-600"><i class="fa-regular fa-clock mr-1"></i>24h window closes in</span>
+            <div class="text-5xl font-black timer-digits my-2" id="duelTimer">14:22:37</div>
+            <div class="flex justify-center gap-2 text-xs text-slate-500 mb-4">both must check daily</div>
+            <button id="duelCheckinBtn" class="btn-soft w-full flex items-center justify-center gap-3 text-slate-800 bg-white py-4">
+                <i class="fa-regular fa-hand-peace text-xl"></i> ✅ I kept my promise · check in
+            </button>
+            <p class="text-xs text-slate-500 mt-4">⚔️ 70% to winner · 25% of loser goes to vault</p>
+        </div>
+
+        <!-- extra info card: redemption preview -->
+        <div class="bg-amber-50/80 rounded-2xl p-4 flex items-center justify-between border border-amber-200">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-vault text-2xl text-amber-600"></i>
+                <div><span class="text-sm text-amber-900">your locked vault</span><span class="font-black block text-amber-900">0.125 SOL</span></div>
+            </div>
+            <span class="text-xs bg-amber-200 px-3 py-1 rounded-full text-amber-800">win to unlock</span>
+        </div>
+
+        <!-- finish session button (go back) -->
+        <button onclick="goToScreen('screen-dashboard')" class="mt-8 btn-soft w-full bg-white py-4 text-slate-700">
+            <i class="fa-regular fa-circle-check mr-2"></i> back to dashboard
+        </button>
+    </div>
+</div>
+
+<script>
+    function goToScreen(screenId) {
+        const current = document.querySelector('.screen.active');
+        const next = document.getElementById(screenId);
+        if (current === next) return;
+        current.classList.remove('active');
+        current.classList.add('prev');
+        next.classList.remove('prev', 'next');
+        next.classList.add('active');
+        setTimeout(() => current.classList.remove('prev'), 500);
+    }
+
+    // Timer logic (common for both dashboard and duel screen)
+    function getDeadline() {
+        let now = new Date();
+        return new Date(now.getTime() + 14 * 60 * 60 * 1000 + 22 * 60 * 1000 + 37 * 1000);
+    }
+    let deadline = getDeadline();
+
+    function updateTimers() {
+        const now = new Date().getTime();
+        const dist = deadline - now;
+        if (dist <= 0) {
+            document.querySelectorAll('[id$="Timer"]').forEach(el => el.innerText = "00:00:00");
+            return;
+        }
+        const h = Math.floor(dist / (60*60*1000));
+        const m = Math.floor((dist % (60*60*1000)) / (60*1000));
+        const s = Math.floor((dist % (60*1000)) / 1000);
+        const formatted = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        document.getElementById('dashboardTimer').innerText = formatted;
+        document.getElementById('duelTimer').innerText = formatted;
+    }
+    updateTimers();
+    setInterval(updateTimers, 1000);
+
+    // Check-in button interaction (demo)
+    const checkinBtn = document.getElementById('duelCheckinBtn');
+    let checked = false; // initially you're shown as "checked in" in UI (green dot), but button says check in. We'll sync.
+    // Actually in our duel screen we set your status to checked in (green). So button should be disabled maybe. But for demo we want ability to check? Let's toggle initial.
+    // Quick fix: override the status to not checked to make button usable.
+    // But we want it consistent: in duel screen, we'll set Alex as "checked in" from the start? The dashboard shows Alex checked, so duel screen also should reflect that. But then check-in button would be redundant. To demonstrate, we'll make the button able to "re-check" (streak extend). For demo, we allow click to update.
+    checkinBtn.addEventListener('click', function(e){
+        e.preventDefault();
+        if(!checked){
+            // change to checked state
+            checkinBtn.innerHTML = '<i class="fa-regular fa-circle-check text-green-600"></i> ✅ CHECKED IN · STREAK SAFE';
+            checkinBtn.disabled = true;
+            checkinBtn.classList.add('opacity-60');
+            checked = true;
+            // also could update status dot, but for simplicity we'll just change button.
+        }
+    });
+
+    // unlock vault button in dashboard (just demo)
+    document.querySelector('.bg-amber-800\\/20')?.addEventListener('click', ()=>{
+        alert('⚔️ win a duel to unlock 0.125 SOL vault');
+    });
+</script>
+
+</body>
+</html>

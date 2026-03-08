@@ -1,13 +1,16 @@
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 
-const DUEL_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DEFAULT_DUEL_DURATION = 7 * 24 * 60 * 60 * 1000;
 
 export const createFriendDuel = mutation({
   args: {
     player1: v.string(),
     stakeAmount: v.number(),
     startTime: v.number(),
+    endTime: v.optional(v.number()),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
     onchainDuelAddress: v.optional(v.string()),
     onchainEscrowAddress: v.optional(v.string()),
     onchainProgramId: v.optional(v.string()),
@@ -20,6 +23,9 @@ export const createFriendDuel = mutation({
       player1,
       stakeAmount,
       startTime,
+      endTime,
+      title,
+      description,
       onchainDuelAddress,
       onchainEscrowAddress,
       onchainProgramId,
@@ -28,12 +34,13 @@ export const createFriendDuel = mutation({
     } = args;
 
     const now = Date.now();
-    const newDate = new Date(startTime);
-
-    console.log({ now, newDate: newDate.getUTCDate });
+    const finalEndTime = endTime ?? startTime + DEFAULT_DUEL_DURATION;
 
     if (startTime <= now) {
       throw new Error("Start time must be in the future");
+    }
+    if (finalEndTime <= startTime) {
+      throw new Error("End time must be after start time");
     }
 
     // const user = await ctx.db.get(player1);
@@ -54,6 +61,8 @@ export const createFriendDuel = mutation({
 
     const duelId = await ctx.db.insert("duels", {
       mode: "FRIEND",
+      title: title?.trim() || undefined,
+      description: description?.trim() || undefined,
 
       player1: user._id,
       player2: undefined,
@@ -63,7 +72,7 @@ export const createFriendDuel = mutation({
       status: "OPEN",
 
       startTime,
-      endTime: startTime + DUEL_DURATION,
+      endTime: finalEndTime,
 
       shieldPlayer1: false,
       shieldPlayer2: false,

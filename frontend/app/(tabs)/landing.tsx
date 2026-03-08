@@ -7,33 +7,48 @@ import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, Vibration, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const FLOW_STEPS = [
+const EXPLAINERS = [
   {
-    id: "01",
-    title: "Create Duel",
-    copy: "Vinay stakes 1 SOL. The contract moves funds into escrow and the backend marks the duel pending.",
+    title: "What this app is",
+    copy: "A PvP habit duel app. Two people put real SOL into escrow, then compete by checking in daily until one side proves more discipline.",
   },
   {
-    id: "02",
-    title: "Join Duel",
-    copy: "Rahul matches the stake, escrow reaches 2 SOL, and the duel becomes active with a start time.",
+    title: "Why blockchain is used",
+    copy: "Money custody and final payout happen on-chain so neither player can fake the stake or alter the final split after the duel is decided.",
   },
   {
-    id: "03",
-    title: "Daily Check-in",
-    copy: "Check-ins stay off-chain for speed. The backend records proof, validates the 24h window, and updates streaks.",
-  },
-  {
-    id: "04",
-    title: "Resolve + Settle",
-    copy: "Two missed windows trigger resolution. The frontend then unlocks settlement so the contract distributes funds.",
+    title: "Why everything is not on-chain",
+    copy: "Daily proof stays off-chain so the habit loop feels fast, cheap, and usable. Only the serious money moment touches the contract.",
   },
 ];
 
-const REWARDS = [
-  "Winner receives 70%",
-  "Loser keeps 25% in vault",
-  "Treasury receives 5%",
+const FLOW_STEPS = [
+  {
+    id: "01",
+    title: "Create a challenge",
+    copy: "Choose a stake, add a title and mission, and lock your side of the escrow.",
+  },
+  {
+    id: "02",
+    title: "Invite or get matched",
+    copy: "A friend can join directly, or a public rival can claim the open slot and activate the duel.",
+  },
+  {
+    id: "03",
+    title: "Check in daily",
+    copy: "Each day you submit proof that you actually did the habit. Miss enough windows and the duel turns against you.",
+  },
+  {
+    id: "04",
+    title: "Settle the result",
+    copy: "When the winner is clear, the final split is executed through the contract so the payout is enforceable.",
+  },
+];
+
+const TRUST_POINTS = [
+  "Real escrow creates pressure before the duel starts.",
+  "Titles and descriptions make every duel read like a mission, not a random transaction.",
+  "The battle board separates open, active, and completed matches so the state is always clear.",
 ];
 
 async function feedbackFx(type: "soft" | "hard") {
@@ -63,25 +78,18 @@ export default function LandingPage() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <SystemWindow style={styles.heroWindow}>
           <View style={styles.heroGlow} />
-          <Text style={styles.badge}>Sol Duel Arena</Text>
-          <Text style={styles.title}>Turn discipline into a live orange-streak game.</Text>
+          <Text style={styles.badge}>Habit Dueling Protocol</Text>
+          <Text style={styles.title}>Turn personal discipline into a meaningful head-to-head game.</Text>
           <Text style={styles.subtitle}>
-            Challenge a friend, lock the stake on-chain, keep the daily loop fast off-chain, and settle only when the winner is clear.
+            If someone has never used blockchain before, the simple version is
+            this: the app holds the wager safely, tracks the daily competition,
+            and releases money by rule instead of trust.
           </Text>
 
           <View style={styles.heroStats}>
-            <View style={styles.heroStatCard}>
-              <Text style={styles.heroStatValue}>2 SOL</Text>
-              <Text style={styles.heroStatLabel}>escrowed match</Text>
-            </View>
-            <View style={styles.heroStatCard}>
-              <Text style={styles.heroStatValue}>24h</Text>
-              <Text style={styles.heroStatLabel}>check-in window</Text>
-            </View>
-            <View style={styles.heroStatCard}>
-              <Text style={styles.heroStatValue}>2</Text>
-              <Text style={styles.heroStatLabel}>strikes to lose</Text>
-            </View>
+            <StatCard value="2 players" label="compete with clear stakes" />
+            <StatCard value="24h loop" label="daily proof window" />
+            <StatCard value="On-chain payout" label="final result enforced" />
           </View>
 
           <View style={styles.heroActions}>
@@ -93,13 +101,25 @@ export default function LandingPage() {
               }}
             />
             <GateButton
-              label="Open Duel Board"
+              label="See Duel Board"
               variant="ghost"
               onPress={() => {
                 void feedbackFx("soft");
                 router.push("/duel");
               }}
             />
+          </View>
+        </SystemWindow>
+
+        <SystemWindow style={styles.explainerWindow}>
+          <Text style={styles.sectionLabel}>How To Understand It</Text>
+          <View style={styles.explainerList}>
+            {EXPLAINERS.map((item) => (
+              <View key={item.title} style={styles.explainerCard}>
+                <Text style={styles.explainerTitle}>{item.title}</Text>
+                <Text style={styles.explainerCopy}>{item.copy}</Text>
+              </View>
+            ))}
           </View>
         </SystemWindow>
 
@@ -120,30 +140,20 @@ export default function LandingPage() {
           </View>
         </SystemWindow>
 
-        <SystemWindow style={styles.rewardsWindow}>
-          <Text style={styles.sectionLabel}>Settlement Rewards</Text>
-          <Text style={styles.rewardsLead}>
-            The backend decides the winner from streak data, but the contract only allows the approved payout path.
-          </Text>
-          <View style={styles.rewardList}>
-            {REWARDS.map((reward) => (
-              <View key={reward} style={styles.rewardRow}>
-                <View style={styles.rewardDot} />
-                <Text style={styles.rewardText}>{reward}</Text>
+        <SystemWindow style={styles.trustWindow}>
+          <Text style={styles.sectionLabel}>Why It Feels Credible</Text>
+          <View style={styles.trustList}>
+            {TRUST_POINTS.map((point) => (
+              <View key={point} style={styles.trustRow}>
+                <View style={styles.trustDot} />
+                <Text style={styles.trustText}>{point}</Text>
               </View>
             ))}
           </View>
-        </SystemWindow>
 
-        <SystemWindow style={styles.warningWindow}>
-          <Text style={styles.sectionLabel}>Why This Works</Text>
-          <Text style={styles.rule}>Real escrow creates pressure.</Text>
-          <Text style={styles.rule}>Off-chain check-ins keep the game fast.</Text>
-          <Text style={styles.rule}>On-chain settlement keeps payouts controlled.</Text>
-
-          <View style={styles.warningAction}>
+          <View style={styles.finalAction}>
             <GateButton
-              label="Launch Challenge"
+              label="Launch First Duel"
               onPress={() => {
                 void feedbackFx("hard");
                 router.push("/");
@@ -156,44 +166,59 @@ export default function LandingPage() {
   );
 }
 
+function StatCard({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.heroStatCard}>
+      <Text style={styles.heroStatValue}>{value}</Text>
+      <Text style={styles.heroStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.bg },
   scroll: { padding: 16, gap: 14, paddingBottom: 44 },
   heroWindow: {
     overflow: "hidden",
     borderColor: C.manaBorder,
-    backgroundColor: "rgba(42,20,8,0.96)",
+    backgroundColor: C.cardAlt,
   },
   heroGlow: {
     position: "absolute",
-    right: -32,
-    top: -26,
-    width: 180,
-    height: 180,
+    right: -36,
+    top: -28,
+    width: 190,
+    height: 190,
     borderRadius: 999,
-    backgroundColor: "rgba(255,138,31,0.18)",
+    backgroundColor: "rgba(255,107,53,0.2)",
   },
   badge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: C.manaDim,
+    borderWidth: 1,
+    borderColor: C.manaBorder,
     fontFamily: "monospace",
     fontSize: 10,
-    color: C.purple,
-    letterSpacing: 2,
+    color: C.white,
+    letterSpacing: 1.4,
     textTransform: "uppercase",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   title: {
     color: C.white,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 30,
+    lineHeight: 36,
     fontWeight: "800",
     marginBottom: 10,
   },
   subtitle: {
     color: C.slate400,
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 15,
+    lineHeight: 22,
     marginBottom: 18,
-    maxWidth: 560,
   },
   heroStats: {
     flexDirection: "row",
@@ -202,27 +227,32 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heroStatCard: {
+    minWidth: "47%",
     flexGrow: 1,
-    minWidth: 92,
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
     borderColor: C.glassBorder,
   },
   heroStatValue: {
     color: C.white,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
     marginBottom: 4,
   },
   heroStatLabel: {
     color: C.slate500,
     fontSize: 11,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
+    lineHeight: 16,
   },
-  heroActions: { gap: 10 },
+  heroActions: {
+    gap: 10,
+  },
+  explainerWindow: {
+    borderColor: C.purpleBorder,
+    backgroundColor: "rgba(255,183,3,0.08)",
+  },
   sectionLabel: {
     fontFamily: "monospace",
     fontSize: 10,
@@ -230,6 +260,27 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: "uppercase",
     marginBottom: 12,
+  },
+  explainerList: {
+    gap: 10,
+  },
+  explainerCard: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: C.cardAlt,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+  },
+  explainerTitle: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  explainerCopy: {
+    color: C.slate400,
+    fontSize: 14,
+    lineHeight: 21,
   },
   flowList: {
     gap: 10,
@@ -239,7 +290,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 16,
     padding: 14,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: C.cardAlt,
     borderWidth: 1,
     borderColor: C.glassBorder,
   },
@@ -252,7 +303,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.mana,
   },
   stepBadgeText: {
-    color: C.coal,
+    color: C.white,
     fontSize: 11,
     fontFamily: "monospace",
     fontWeight: "800",
@@ -271,45 +322,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  rewardsWindow: {
-    borderColor: C.purpleBorder,
-    backgroundColor: "rgba(255,179,71,0.08)",
+  trustWindow: {
+    borderColor: C.success,
+    backgroundColor: C.successSoft,
   },
-  rewardsLead: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  rewardList: {
+  trustList: {
     gap: 10,
   },
-  rewardRow: {
+  trustRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 10,
   },
-  rewardDot: {
+  trustDot: {
     width: 10,
     height: 10,
     borderRadius: 999,
     backgroundColor: C.success,
+    marginTop: 6,
   },
-  rewardText: {
+  trustText: {
+    flex: 1,
     color: C.white,
     fontSize: 14,
-  },
-  warningWindow: {
-    borderColor: "rgba(255,107,26,0.34)",
-    backgroundColor: "rgba(255,107,26,0.09)",
-  },
-  rule: {
-    color: C.slate400,
-    fontSize: 14,
     lineHeight: 21,
-    marginBottom: 4,
   },
-  warningAction: {
-    marginTop: 12,
+  finalAction: {
+    marginTop: 16,
   },
 });

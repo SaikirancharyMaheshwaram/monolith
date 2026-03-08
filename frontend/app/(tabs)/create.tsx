@@ -5,7 +5,14 @@ import { useWallet } from "@/lib/use-wallet";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const FLOW_STEPS = [
@@ -70,7 +77,10 @@ export default function RedemptionVaultScreen() {
       setWalletBalance(balance);
     } catch (error) {
       console.error("Failed to load redemption vault", error);
-      Alert.alert("Vault load failed", "Could not load on-chain redemption vault state.");
+      Alert.alert(
+        "Vault load failed",
+        "Could not load on-chain redemption vault state.",
+      );
     } finally {
       setLoadingVault(false);
     }
@@ -90,7 +100,10 @@ export default function RedemptionVaultScreen() {
         `${result.redeemedSol.toFixed(4)} SOL was sent from your redemption vault to your wallet.`,
       );
     } catch (error: any) {
-      Alert.alert("Redeem failed", error?.message ?? "Could not redeem the vault.");
+      Alert.alert(
+        "Redeem failed",
+        error?.message ?? "Could not redeem the vault.",
+      );
     } finally {
       setRedeeming(false);
     }
@@ -101,7 +114,9 @@ export default function RedemptionVaultScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centered}>
           <Text style={styles.title}>REDEMPTION VAULT</Text>
-          <Text style={styles.sub}>Connect wallet to load your on-chain vault.</Text>
+          <Text style={styles.sub}>
+            Connect wallet to load your on-chain vault.
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -131,28 +146,58 @@ export default function RedemptionVaultScreen() {
       >
         <SystemWindow style={styles.heroWindow}>
           <View style={styles.heroGlow} />
-          <Text style={styles.badge}>On-Chain Recovery</Text>
-          <Text style={styles.heroTitle}>Your redemption vault lives on-chain, not in Convex.</Text>
+          <Text style={styles.badge}>Vault Control</Text>
+          <Text style={styles.heroTitle}>
+            Your redemption vault is the safety layer behind lost duels.
+          </Text>
           <Text style={styles.heroSubtitle}>
-            This screen reads your actual Redemption Vault PDA. If it is unlocked, you can redeem directly to your wallet. If locked, the next duel win opens it.
+            This page reads the real on-chain vault PDA. If it is unlocked, you
+            can withdraw immediately. If it is locked, the next duel win is
+            what opens recovery access.
           </Text>
 
           <View style={styles.heroStats}>
-            <StatCard label="Vault Balance" value={`${(vault?.balanceSol ?? 0).toFixed(4)} SOL`} />
+            <StatCard
+              label="Vault Balance"
+              value={`${(vault?.balanceSol ?? 0).toFixed(4)} SOL`}
+            />
             <StatCard label="Vault Status" value={status} highlight />
-            <StatCard label="Wallet Balance" value={walletBalance === null ? "..." : `${walletBalance.toFixed(4)} SOL`} />
+            <StatCard
+              label="Wallet Balance"
+              value={
+                walletBalance === null
+                  ? "..."
+                  : `${walletBalance.toFixed(4)} SOL`
+              }
+            />
           </View>
         </SystemWindow>
 
-        <SystemWindow style={status === "LOCKED" ? styles.lockedWindow : styles.readyWindow}>
+        <SystemWindow
+          style={status === "LOCKED" ? styles.lockedWindow : styles.readyWindow}
+        >
           <Text style={styles.sectionLabel}>Vault State</Text>
           <View style={styles.statusWrap}>
-            <View style={[styles.statusPill, status === "LOCKED" ? styles.statusPillLocked : styles.statusPillReady]}>
-              <Text style={[styles.statusPillText, status === "LOCKED" ? styles.statusPillTextLocked : styles.statusPillTextReady]}>
-                {status}
-              </Text>
-            </View>
-            <Text style={styles.statusCopy}>
+            <View
+              style={[
+                styles.statusPill,
+                status === "LOCKED"
+                  ? styles.statusPillLocked
+                  : styles.statusPillReady,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusPillText,
+                  status === "LOCKED"
+                    ? styles.statusPillTextLocked
+                    : styles.statusPillTextReady,
+                ]}
+              >
+              {status}
+            </Text>
+          </View>
+          <Text style={styles.statusCopy}>
               {status === "LOCKED"
                 ? "Funds are trapped in the redemption vault. Win the next duel to unlock them."
                 : status === "READY"
@@ -162,16 +207,32 @@ export default function RedemptionVaultScreen() {
           </View>
 
           <View style={styles.grid}>
-            <InfoCard label="Vault PDA" value={vault?.vaultAddress ?? "Loading..."} mono />
-            <InfoCard label="Vault Owner" value={vault?.owner ?? walletAddress} mono />
-            <InfoCard label="Locked Lamports" value={String(vault?.lockedLamports ?? 0)} mono />
-            <InfoCard label="Account Exists" value={vault?.exists ? "Yes" : "No"} />
+            <InfoCard
+              label="Vault PDA"
+              value={vault?.vaultAddress ?? "Loading..."}
+              mono
+            />
+            <InfoCard
+              label="Vault Owner"
+              value={vault?.owner ?? walletAddress}
+              mono
+            />
+            <InfoCard
+              label="Locked Lamports"
+              value={String(vault?.lockedLamports ?? 0)}
+              mono
+            />
+            <InfoCard
+              label="Account Exists"
+              value={vault?.exists ? "Yes" : "No"}
+            />
           </View>
 
           <View style={styles.redeemPanel}>
-            <Text style={styles.redeemTitle}>Withdraw To Wallet</Text>
+            <Text style={styles.redeemTitle}>Move Funds Back To Wallet</Text>
             <Text style={styles.redeemCopy}>
-              Redeem uses the on-chain `redeemVault` instruction. No fake off-chain transfer is shown here.
+              Redeem calls the real on-chain `redeemVault` instruction. This is
+              not a simulated dashboard action.
             </Text>
             <View style={styles.actionStack}>
               <GateButton
@@ -207,7 +268,10 @@ export default function RedemptionVaultScreen() {
 
         <SystemWindow style={styles.metaWindow}>
           <Text style={styles.sectionLabel}>Hunter Readout</Text>
-          <Row label="Player" value={user ? `@${user.username}` : "Profile missing"} />
+          <Row
+            label="Player"
+            value={user ? `@${user.username}` : "Profile missing"}
+          />
           <Row label="Tier" value={user?.tier ?? "Unsynced"} />
           <Row label="Wallet" value={walletAddress} mono />
         </SystemWindow>
@@ -228,7 +292,9 @@ function StatCard({
   return (
     <View style={[styles.statCard, highlight && styles.statCardHighlight]}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, highlight && styles.statValueHighlight]}>{value}</Text>
+      <Text style={[styles.statValue, highlight && styles.statValueHighlight]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -245,8 +311,11 @@ function InfoCard({
   return (
     <View style={styles.infoCard}>
       <Text style={styles.infoCardLabel}>{label}</Text>
-      <Text style={[styles.infoCardValue, mono && styles.mono]} numberOfLines={2}>
-        {mono ? shortAddress(value) === "Unavailable" ? value : value : value}
+      <Text
+        style={[styles.infoCardValue, mono && styles.mono]}
+        numberOfLines={2}
+      >
+        {mono ? (shortAddress(value) === "Unavailable" ? value : value) : value}
       </Text>
     </View>
   );
@@ -306,7 +375,7 @@ const styles = StyleSheet.create({
   heroWindow: {
     overflow: "hidden",
     borderColor: C.manaBorder,
-    backgroundColor: "rgba(42,20,8,0.97)",
+    backgroundColor: C.cardAlt,
   },
   heroGlow: {
     position: "absolute",
@@ -315,7 +384,7 @@ const styles = StyleSheet.create({
     width: 170,
     height: 170,
     borderRadius: 999,
-    backgroundColor: "rgba(255,138,31,0.16)",
+    backgroundColor: "rgba(255,107,53,0.2)",
   },
   badge: {
     fontFamily: "monospace",
@@ -377,12 +446,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   lockedWindow: {
-    borderColor: "rgba(255,107,26,0.34)",
-    backgroundColor: "rgba(255,107,26,0.09)",
+    borderColor: "rgba(255,75,75,0.34)",
+    backgroundColor: C.dangerSoft,
   },
   readyWindow: {
     borderColor: C.success,
-    backgroundColor: "rgba(255,210,111,0.08)",
+    backgroundColor: C.successSoft,
   },
   statusWrap: {
     gap: 10,
@@ -396,12 +465,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statusPillLocked: {
-    backgroundColor: "rgba(255,107,26,0.16)",
-    borderColor: "rgba(255,107,26,0.34)",
+    backgroundColor: C.dangerSoft,
+    borderColor: "rgba(255,75,75,0.34)",
   },
   statusPillReady: {
-    backgroundColor: "rgba(255,210,111,0.16)",
-    borderColor: "rgba(255,210,111,0.34)",
+    backgroundColor: C.successSoft,
+    borderColor: "rgba(0,245,160,0.34)",
   },
   statusPillText: {
     fontFamily: "monospace",
@@ -410,10 +479,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   statusPillTextLocked: {
-    color: C.white,
+    color: C.danger,
   },
   statusPillTextReady: {
-    color: C.coal,
+    color: C.success,
   },
   statusCopy: {
     color: C.slate400,

@@ -13,6 +13,8 @@ type CreateDuelInput = {
   player1: string;
   stakeAmount: number;
   startTime: number;
+  title?: string;
+  description?: string;
 };
 
 type ArenaState = {
@@ -56,13 +58,15 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
     set((state) => ({ ...state, openDuels: open }));
   },
 
-  createDuel: async ({ player1, stakeAmount, startTime }) => {
+  createDuel: async ({ player1, stakeAmount, startTime, title, description }) => {
     set((state) => ({ ...state, createLoading: true }));
     try {
       const duelId = await convexClient.mutation(api.duels.createFriendDuel.createFriendDuel, {
         player1,
         stakeAmount,
         startTime,
+        title,
+        description,
       });
       return duelId;
     } finally {
