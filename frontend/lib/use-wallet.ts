@@ -44,6 +44,12 @@ const SETTLE_DUEL_DISCRIMINATOR = Buffer.from([
 const INITIALIZE_CONFIG_DISCRIMINATOR = Buffer.from([
   241, 255, 79, 111, 223, 206, 48, 120,
 ]);
+const REDEEM_VAULT_DISCRIMINATOR = Buffer.from([
+  132, 70, 193, 151, 97, 115, 180, 195,
+]);
+const REDEMPTION_VAULT_ACCOUNT_DISCRIMINATOR = Buffer.from([
+  76, 171, 19, 58, 196, 239, 84, 140,
+]);
 const DUEL_SEED = Buffer.from("duel");
 const ESCROW_SEED = Buffer.from("escrow");
 const CONFIG_SEED = Buffer.from("config");
@@ -115,6 +121,16 @@ type InitializeProgramConfigResult = {
   programId: string;
 };
 
+type RedemptionVaultInfo = {
+  vaultAddress: string;
+  exists: boolean;
+  owner: string | null;
+  isLocked: boolean;
+  lockedLamports: number;
+  balanceSol: number;
+  accountLamports: number;
+};
+
 type WalletHook = {
   publicKey: PublicKey | null;
   connected: boolean;
@@ -137,6 +153,13 @@ type WalletHook = {
   settleDuel: (
     input: SettleOnChainDuelInput,
   ) => Promise<SettleOnChainDuelResult>;
+  getRedemptionVaultInfo: () => Promise<RedemptionVaultInfo>;
+  redeemVault: () => Promise<{
+    signature: string;
+    vaultAddress: string;
+    redeemedLamports: number;
+    redeemedSol: number;
+  }>;
   connection: Connection;
 };
 
@@ -276,6 +299,35 @@ function parseConfigAccountData(data: Buffer) {
   };
 }
 
+function parseRedemptionVaultAccountData(data: Buffer) {
+  if (data.length < 49) {
+    throw new Error("Invalid redemption vault account size");
+  }
+
+  const discriminator = data.subarray(0, 8);
+  const matchesDiscriminator =
+    discriminator.length === REDEMPTION_VAULT_ACCOUNT_DISCRIMINATOR.length &&
+    discriminator.every(
+      (byte, index) => byte === REDEMPTION_VAULT_ACCOUNT_DISCRIMINATOR[index],
+    );
+  if (!matchesDiscriminator) {
+    throw new Error("Invalid redemption vault discriminator");
+  }
+
+  let offset = 8;
+  const owner = readPublicKey(data, offset);
+  offset += 32;
+  const lockedLamports = readUInt64LE(data, offset);
+  offset += 8;
+  const isLocked = data[offset] === 1;
+
+  return {
+    owner,
+    lockedLamports,
+    isLocked,
+  };
+}
+
 function isWalletRequestDeclined(error: unknown) {
   if (!error || typeof error !== "object") return false;
 
@@ -398,6 +450,102 @@ export function useWallet(): WalletHook {
     const balance = await connection.getBalance(publicKey);
     return balance / LAMPORTS_PER_SOL;
   }, [publicKey, connection]);
+
+  const getRedemptionVaultInfo = useCallback(async () => {
+    if (!publicKey) throw new Error("Wallet not connected");
+
+    const [vaultPublicKey] = PublicKey.findProgramAddressSync(
+      [VAULT_SEED, publicKey.toBuffer()],
+      D_ARENA_PROGRAM_ID,
+    );
+
+    const accountInfo = await connection.getAccountInfo(vaultPublicKey, "confirmed");
+    if (!accountInfo) {
+      return {
+        vaultAddress: vaultPublicKey.toBase58(),
+        exists: false,
+        owner: null,
+        isLocked: false,
+        lockedLamports: 0,
+        balanceSol: 0,
+        accountLamports: 0,
+      };
+    }
+
+    const vault = parseRedemptionVaultAccountData(Buffer.from(accountInfo.data));
+    return {
+      vaultAddress: vaultPublicKey.toBase58(),
+      exists: true,
+      owner: vault.owner.toBase58(),
+      isLocked: vault.isLocked,
+      lockedLamports: vault.lockedLamports,
+      balanceSol: vault.lockedLamports / LAMPORTS_PER_SOL,
+      accountLamports: accountInfo.lamports,
+    };
+  }, [connection, publicKey]);
+
+  const redeemVault = useCallback(async () => {
+    if (!publicKey) throw new Error("Wallet not connected");
+
+    const vault = await getRedemptionVaultInfo();
+    if (!vault.exists) throw new Error("Redemption vault not found");
+
+    const vaultPublicKey = new PublicKey(vault.vaultAddress);
+    const instruction = new TransactionInstruction({
+      programId: D_ARENA_PROGRAM_ID,
+      keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: vaultPublicKey, isSigner: false, isWritable: true },
+        {
+          pubkey: SystemProgram.programId,
+          isSigner: false,
+          isWritable: false,
+        },
+      ],
+      data: REDEEM_VAULT_DISCRIMINATOR,
+    });
+
+    setSending(true);
+    try {
+      const transaction = new Transaction().add(instruction);
+      const latestBlockhash =
+        await connection.getLatestBlockhash("confirmed");
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = publicKey;
+
+      const simulation = await connection.simulateTransaction(transaction);
+      if (simulation.value.err) {
+        console.error("redeemVault simulation logs", simulation.value.logs ?? []);
+        throw new Error(formatSimulationError(simulation.value));
+      }
+
+      const txSignature = await transact(async (wallet: Web3MobileWallet) => {
+        await authorizeWalletSession(wallet, publicKey.toBase58());
+        const signatures = await wallet.signAndSendTransactions({
+          transactions: [transaction],
+        });
+        return normalizeSignature(signatures[0]);
+      });
+
+      await connection.confirmTransaction(
+        {
+          signature: txSignature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+
+      return {
+        signature: txSignature,
+        vaultAddress: vault.vaultAddress,
+        redeemedLamports: vault.lockedLamports,
+        redeemedSol: vault.balanceSol,
+      };
+    } finally {
+      setSending(false);
+    }
+  }, [authorizeWalletSession, connection, getRedemptionVaultInfo, publicKey]);
 
   const sendSOL = useCallback(
     async (toAddress: string, amountSOL: number) => {
@@ -915,6 +1063,8 @@ export function useWallet(): WalletHook {
     initializeProgramConfig,
     getDuelSettlementContext,
     settleDuel,
+    getRedemptionVaultInfo,
+    redeemVault,
     connection,
   };
 }
