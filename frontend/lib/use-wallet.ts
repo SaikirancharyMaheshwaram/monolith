@@ -6,13 +6,16 @@ import {
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 import {
+  ComputeBudgetProgram,
   Connection,
+  Ed25519Program,
   PublicKey,
   Transaction,
   TransactionInstruction,
   type SimulatedTransactionResponse,
   SystemProgram,
   LAMPORTS_PER_SOL,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
   clusterApiUrl,
 } from "@solana/web3.js";
 import { useQuery } from "convex/react";
@@ -29,10 +32,25 @@ const APP_IDENTITY = {
 const D_ARENA_PROGRAM_ID = new PublicKey(
   "EJUzdHnJDy9QEVpWCYcbFoZzXbQWanzKLYJdAYkrqJNM",
 );
-const CREATE_DUEL_DISCRIMINATOR = Buffer.from([49, 28, 93, 11, 75, 242, 69, 165]);
-const JOIN_DUEL_DISCRIMINATOR = Buffer.from([7, 247, 76, 103, 101, 139, 254, 61]);
+const CREATE_DUEL_DISCRIMINATOR = Buffer.from([
+  49, 28, 93, 11, 75, 242, 69, 165,
+]);
+const JOIN_DUEL_DISCRIMINATOR = Buffer.from([
+  7, 247, 76, 103, 101, 139, 254, 61,
+]);
+const SETTLE_DUEL_DISCRIMINATOR = Buffer.from([
+  148, 90, 251, 130, 217, 144, 190, 239,
+]);
+const INITIALIZE_CONFIG_DISCRIMINATOR = Buffer.from([
+  241, 255, 79, 111, 223, 206, 48, 120,
+]);
 const DUEL_SEED = Buffer.from("duel");
 const ESCROW_SEED = Buffer.from("escrow");
+const CONFIG_SEED = Buffer.from("config");
+const VAULT_SEED = Buffer.from("vault");
+const BPF_UPGRADEABLE_LOADER_PROGRAM_ID = new PublicKey(
+  "BPFLoaderUpgradeab1e11111111111111111111111",
+);
 const DUEL_DURATION_SECONDS = 7 * 24 * 60 * 60;
 const CREATE_DUEL_MIN_START_OFFSET_SECONDS = 60;
 const DUEL_ACCOUNT_SPACE = 157;
@@ -67,6 +85,36 @@ type JoinOnChainDuelResult = {
   programId: string;
 };
 
+type DuelSettlementContext = {
+  duelId: number;
+  settlementNonce: number;
+};
+
+type SettleOnChainDuelInput = {
+  duelAddress: string;
+  resultByte: number;
+  message: string;
+  signature: string;
+};
+
+type SettleOnChainDuelResult = {
+  signature: string;
+  duelAddress: string;
+  programId: string;
+};
+
+type InitializeProgramConfigInput = {
+  backendPubkey: string;
+  treasuryAddress: string;
+  feeBps: number;
+};
+
+type InitializeProgramConfigResult = {
+  signature: string;
+  configAddress: string;
+  programId: string;
+};
+
 type WalletHook = {
   publicKey: PublicKey | null;
   connected: boolean;
@@ -76,8 +124,19 @@ type WalletHook = {
   disconnect: () => void;
   getBalance: () => Promise<number>;
   sendSOL: (toAddress: string, amountSOL: number) => Promise<string>;
-  createDuel: (input: CreateOnChainDuelInput) => Promise<CreateOnChainDuelResult>;
+  createDuel: (
+    input: CreateOnChainDuelInput,
+  ) => Promise<CreateOnChainDuelResult>;
   joinDuel: (input: JoinOnChainDuelInput) => Promise<JoinOnChainDuelResult>;
+  initializeProgramConfig: (
+    input: InitializeProgramConfigInput,
+  ) => Promise<InitializeProgramConfigResult>;
+  getDuelSettlementContext: (
+    duelAddress: string,
+  ) => Promise<DuelSettlementContext>;
+  settleDuel: (
+    input: SettleOnChainDuelInput,
+  ) => Promise<SettleOnChainDuelResult>;
   connection: Connection;
 };
 
@@ -113,8 +172,108 @@ function formatSimulationError(simulation: SimulatedTransactionResponse) {
     return logs ? `${simulation.err}\n${logs}` : simulation.err;
   }
 
-  const errText = simulation.err ? JSON.stringify(simulation.err) : "Transaction simulation failed";
+  const errText = simulation.err
+    ? JSON.stringify(simulation.err)
+    : "Transaction simulation failed";
   return logs ? `${errText}\n${logs}` : errText;
+}
+
+function describeSettlementSimulationFailure(
+  simulation: SimulatedTransactionResponse,
+) {
+  const raw = formatSimulationError(simulation);
+  const err = simulation.err;
+
+  if (
+    err &&
+    typeof err === "object" &&
+    "InstructionError" in err &&
+    Array.isArray((err as { InstructionError?: unknown }).InstructionError)
+  ) {
+    const [ixIndex] = (err as { InstructionError: [number, unknown] })
+      .InstructionError;
+
+    if (ixIndex === 1) {
+      return [
+        "Settlement signature verification failed before the duel program executed.",
+        "This usually means the on-chain config backend pubkey does not match BACKEND_SIGNER_SECRET_KEY, or the signed settlement message bytes differ from what the program expects.",
+        raw,
+      ].join("\n");
+    }
+
+    if (ixIndex === 2) {
+      return [
+        "The duel program rejected the settle instruction after signature verification passed.",
+        raw,
+      ].join("\n");
+    }
+  }
+
+  return raw;
+}
+
+function readUInt64LE(bytes: Uint8Array, offset: number) {
+  let value = 0;
+  let multiplier = 1;
+
+  for (let i = 0; i < 8; i += 1) {
+    value += bytes[offset + i] * multiplier;
+    multiplier *= 256;
+  }
+
+  return value;
+}
+
+function readPublicKey(bytes: Uint8Array, offset: number) {
+  return new PublicKey(bytes.slice(offset, offset + 32));
+}
+
+function parseDuelAccountData(data: Buffer) {
+  let offset = 8;
+  const duelId = readUInt64LE(data, offset);
+  offset += 8;
+  const creator = readPublicKey(data, offset);
+  offset += 32;
+
+  const opponentOption = data[offset];
+  offset += 1;
+  const opponent = opponentOption === 1 ? readPublicKey(data, offset) : null;
+  offset += 32;
+
+  offset += 8; // staked_amount
+  offset += 1; // status enum
+  offset += 8; // created_ts
+  offset += 8; // start_ts
+  offset += 8; // end_ts
+
+  const winnerOption = data[offset];
+  offset += 1;
+  const winner = winnerOption === 1 ? readPublicKey(data, offset) : null;
+  offset += 32;
+
+  const settlementNonce = readUInt64LE(data, offset);
+
+  return {
+    duelId,
+    creator,
+    opponent,
+    winner,
+    settlementNonce,
+  };
+}
+
+function parseConfigAccountData(data: Buffer) {
+  let offset = 8;
+  offset += 32; // admin
+  offset += 32; // server authority
+  const treasury = readPublicKey(data, offset);
+  offset += 32;
+  const backendPubkey = Uint8Array.from(data.slice(offset, offset + 32));
+
+  return {
+    treasury,
+    backendPubkey,
+  };
 }
 
 function isWalletRequestDeclined(error: unknown) {
@@ -278,9 +437,14 @@ export function useWallet(): WalletHook {
   );
 
   const createDuel = useCallback(
-    async ({ stakeAmountSol, startTimeMs, duelNonce }: CreateOnChainDuelInput) => {
+    async ({
+      stakeAmountSol,
+      startTimeMs,
+      duelNonce,
+    }: CreateOnChainDuelInput) => {
       if (!publicKey) throw new Error("Wallet not connected");
-      if (stakeAmountSol <= 0) throw new Error("Stake amount must be greater than zero");
+      if (stakeAmountSol <= 0)
+        throw new Error("Stake amount must be greater than zero");
 
       const nonce = duelNonce ?? generateDuelNonce();
       const stakeLamports = Math.round(stakeAmountSol * LAMPORTS_PER_SOL);
@@ -316,7 +480,11 @@ export function useWallet(): WalletHook {
           { pubkey: publicKey, isSigner: true, isWritable: true },
           { pubkey: duelPda, isSigner: false, isWritable: true },
           { pubkey: escrowPda, isSigner: false, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          {
+            pubkey: SystemProgram.programId,
+            isSigner: false,
+            isWritable: false,
+          },
         ],
         data: instructionData,
       });
@@ -324,18 +492,30 @@ export function useWallet(): WalletHook {
       setSending(true);
       try {
         const transaction = new Transaction().add(instruction);
-        const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        const latestBlockhash =
+          await connection.getLatestBlockhash("confirmed");
         transaction.recentBlockhash = latestBlockhash.blockhash;
         transaction.feePayer = publicKey;
-        const [balanceLamports, duelRentLamports, escrowRentLamports, simulation] = await Promise.all([
+        const [
+          balanceLamports,
+          duelRentLamports,
+          escrowRentLamports,
+          simulation,
+        ] = await Promise.all([
           connection.getBalance(publicKey, "confirmed"),
-          connection.getMinimumBalanceForRentExemption(DUEL_ACCOUNT_SPACE, "confirmed"),
+          connection.getMinimumBalanceForRentExemption(
+            DUEL_ACCOUNT_SPACE,
+            "confirmed",
+          ),
           connection.getMinimumBalanceForRentExemption(0, "confirmed"),
           connection.simulateTransaction(transaction),
         ]);
 
         const minimumNeededLamports =
-          stakeLamports + duelRentLamports + escrowRentLamports + DEFAULT_FEE_LAMPORTS;
+          stakeLamports +
+          duelRentLamports +
+          escrowRentLamports +
+          DEFAULT_FEE_LAMPORTS;
         if (balanceLamports < minimumNeededLamports) {
           throw new Error(
             `Insufficient balance. Need at least ${(minimumNeededLamports / LAMPORTS_PER_SOL).toFixed(4)} SOL including rent and fees, wallet has ${(balanceLamports / LAMPORTS_PER_SOL).toFixed(4)} SOL.`,
@@ -343,7 +523,10 @@ export function useWallet(): WalletHook {
         }
 
         if (simulation.value.err) {
-          console.error("createDuel simulation logs", simulation.value.logs ?? []);
+          console.error(
+            "createDuel simulation logs",
+            simulation.value.logs ?? [],
+          );
           throw new Error(formatSimulationError(simulation.value));
         }
 
@@ -392,7 +575,9 @@ export function useWallet(): WalletHook {
         [ESCROW_SEED, duelPublicKey.toBuffer()],
         D_ARENA_PROGRAM_ID,
       )[0];
-      const escrowPublicKey = escrowAddress ? new PublicKey(escrowAddress) : derivedEscrow;
+      const escrowPublicKey = escrowAddress
+        ? new PublicKey(escrowAddress)
+        : derivedEscrow;
 
       if (!escrowPublicKey.equals(derivedEscrow)) {
         throw new Error("Escrow address does not match duel PDA");
@@ -404,7 +589,11 @@ export function useWallet(): WalletHook {
           { pubkey: publicKey, isSigner: true, isWritable: true },
           { pubkey: duelPublicKey, isSigner: false, isWritable: true },
           { pubkey: escrowPublicKey, isSigner: false, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          {
+            pubkey: SystemProgram.programId,
+            isSigner: false,
+            isWritable: false,
+          },
         ],
         data: JOIN_DUEL_DISCRIMINATOR,
       });
@@ -412,13 +601,17 @@ export function useWallet(): WalletHook {
       setSending(true);
       try {
         const transaction = new Transaction().add(instruction);
-        const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        const latestBlockhash =
+          await connection.getLatestBlockhash("confirmed");
         transaction.recentBlockhash = latestBlockhash.blockhash;
         transaction.feePayer = publicKey;
 
         const simulation = await connection.simulateTransaction(transaction);
         if (simulation.value.err) {
-          console.error("joinDuel simulation logs", simulation.value.logs ?? []);
+          console.error(
+            "joinDuel simulation logs",
+            simulation.value.logs ?? [],
+          );
           throw new Error(formatSimulationError(simulation.value));
         }
 
@@ -454,6 +647,260 @@ export function useWallet(): WalletHook {
     [authorizeWalletSession, connection, publicKey],
   );
 
+  const initializeProgramConfig = useCallback(
+    async ({
+      backendPubkey,
+      treasuryAddress,
+      feeBps,
+    }: InitializeProgramConfigInput) => {
+      if (!publicKey) throw new Error("Wallet not connected");
+
+      const [configPublicKey] = PublicKey.findProgramAddressSync(
+        [CONFIG_SEED],
+        D_ARENA_PROGRAM_ID,
+      );
+      const [programDataPublicKey] = PublicKey.findProgramAddressSync(
+        [D_ARENA_PROGRAM_ID.toBytes()],
+        BPF_UPGRADEABLE_LOADER_PROGRAM_ID,
+      );
+
+      const backendBytes = bs58.decode(backendPubkey);
+      if (backendBytes.length !== 32) {
+        throw new Error("Backend signer pubkey must be 32 bytes");
+      }
+
+      const feeBuffer = Buffer.alloc(2);
+      feeBuffer.writeUInt16LE(feeBps, 0);
+
+      const instruction = new TransactionInstruction({
+        programId: D_ARENA_PROGRAM_ID,
+        keys: [
+          { pubkey: publicKey, isSigner: true, isWritable: true },
+          { pubkey: configPublicKey, isSigner: false, isWritable: true },
+          {
+            pubkey: SystemProgram.programId,
+            isSigner: false,
+            isWritable: false,
+          },
+          { pubkey: D_ARENA_PROGRAM_ID, isSigner: false, isWritable: false },
+          { pubkey: programDataPublicKey, isSigner: false, isWritable: false },
+        ],
+        data: Buffer.concat([
+          INITIALIZE_CONFIG_DISCRIMINATOR,
+          Buffer.from(backendBytes),
+          new PublicKey(treasuryAddress).toBuffer(),
+          feeBuffer,
+        ]),
+      });
+
+      setSending(true);
+      try {
+        const transaction = new Transaction().add(instruction);
+        const latestBlockhash =
+          await connection.getLatestBlockhash("confirmed");
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.feePayer = publicKey;
+
+        const simulation = await connection.simulateTransaction(transaction);
+        if (simulation.value.err) {
+          console.error(
+            "initializeProgramConfig simulation logs",
+            simulation.value.logs ?? [],
+          );
+          throw new Error(formatSimulationError(simulation.value));
+        }
+
+        const txSignature = await transact(async (wallet: Web3MobileWallet) => {
+          await authorizeWalletSession(wallet, publicKey.toBase58());
+          const signatures = await wallet.signAndSendTransactions({
+            transactions: [transaction],
+          });
+          return normalizeSignature(signatures[0]);
+        });
+
+        await connection.confirmTransaction(
+          {
+            signature: txSignature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        return {
+          signature: txSignature,
+          configAddress: configPublicKey.toBase58(),
+          programId: D_ARENA_PROGRAM_ID.toBase58(),
+        };
+      } finally {
+        setSending(false);
+      }
+    },
+    [authorizeWalletSession, connection, publicKey],
+  );
+
+  const getDuelSettlementContext = useCallback(
+    async (duelAddress: string) => {
+      const duelAccountInfo = await connection.getAccountInfo(
+        new PublicKey(duelAddress),
+        "confirmed",
+      );
+      if (!duelAccountInfo) throw new Error("On-chain duel account not found");
+
+      const duel = parseDuelAccountData(Buffer.from(duelAccountInfo.data));
+      return {
+        duelId: duel.duelId,
+        settlementNonce: duel.settlementNonce,
+      };
+    },
+    [connection],
+  );
+
+  const settleDuel = useCallback(
+    async ({
+      duelAddress,
+      resultByte,
+      message,
+      signature,
+    }: SettleOnChainDuelInput) => {
+      if (!publicKey) throw new Error("Wallet not connected");
+
+      const duelPublicKey = new PublicKey(duelAddress);
+      const duelAccountInfo = await connection.getAccountInfo(
+        duelPublicKey,
+        "confirmed",
+      );
+      if (!duelAccountInfo) throw new Error("On-chain duel account not found");
+
+      const duel = parseDuelAccountData(Buffer.from(duelAccountInfo.data));
+      if (!duel.opponent) throw new Error("Opponent account missing on-chain");
+
+      const [escrowPublicKey] = PublicKey.findProgramAddressSync(
+        [ESCROW_SEED, duelPublicKey.toBuffer()],
+        D_ARENA_PROGRAM_ID,
+      );
+      const [configPublicKey] = PublicKey.findProgramAddressSync(
+        [CONFIG_SEED],
+        D_ARENA_PROGRAM_ID,
+      );
+      console.log({ configPublicKey });
+
+      const configAccountInfo = await connection.getAccountInfo(
+        configPublicKey,
+        "confirmed",
+      );
+      if (!configAccountInfo) {
+        throw new Error(
+          `On-chain config account not found on ${cluster}. Run initialize_config for PDA ${configPublicKey.toBase58()} on this network first.`,
+        );
+      }
+      const config = parseConfigAccountData(
+        Buffer.from(configAccountInfo.data),
+      );
+
+      const [creatorVault] = PublicKey.findProgramAddressSync(
+        [VAULT_SEED, duel.creator.toBuffer()],
+        D_ARENA_PROGRAM_ID,
+      );
+      const [opponentVault] = PublicKey.findProgramAddressSync(
+        [VAULT_SEED, duel.opponent.toBuffer()],
+        D_ARENA_PROGRAM_ID,
+      );
+
+      const ed25519Ix = Ed25519Program.createInstructionWithPublicKey({
+        publicKey: config.backendPubkey,
+        message: bs58.decode(message),
+        signature: bs58.decode(signature),
+      });
+
+      const settleIx = new TransactionInstruction({
+        programId: D_ARENA_PROGRAM_ID,
+        keys: [
+          { pubkey: publicKey, isSigner: true, isWritable: true },
+          { pubkey: duelPublicKey, isSigner: false, isWritable: true },
+          { pubkey: configPublicKey, isSigner: false, isWritable: false },
+          { pubkey: escrowPublicKey, isSigner: false, isWritable: true },
+          { pubkey: duel.creator, isSigner: false, isWritable: true },
+          { pubkey: duel.opponent, isSigner: false, isWritable: true },
+          { pubkey: creatorVault, isSigner: false, isWritable: true },
+          { pubkey: opponentVault, isSigner: false, isWritable: true },
+          { pubkey: config.treasury, isSigner: false, isWritable: true },
+          {
+            pubkey: SYSVAR_INSTRUCTIONS_PUBKEY,
+            isSigner: false,
+            isWritable: false,
+          },
+          {
+            pubkey: SystemProgram.programId,
+            isSigner: false,
+            isWritable: false,
+          },
+        ],
+        data: Buffer.concat([
+          SETTLE_DUEL_DISCRIMINATOR,
+          Buffer.from([resultByte]),
+        ]),
+      });
+
+      setSending(true);
+      try {
+        const transaction = new Transaction()
+          .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
+          .add(ed25519Ix)
+          .add(settleIx);
+
+        const latestBlockhash =
+          await connection.getLatestBlockhash("confirmed");
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.feePayer = publicKey;
+
+        const simulation = await connection.simulateTransaction(transaction);
+        if (simulation.value.err) {
+          console.error(
+            "settleDuel simulation failed",
+            {
+              err: simulation.value.err,
+              logs: simulation.value.logs ?? [],
+              duelAddress: duelPublicKey.toBase58(),
+              configAddress: configPublicKey.toBase58(),
+              escrowAddress: escrowPublicKey.toBase58(),
+              creatorVault: creatorVault.toBase58(),
+              opponentVault: opponentVault.toBase58(),
+              treasuryAddress: config.treasury.toBase58(),
+            },
+          );
+          throw new Error(describeSettlementSimulationFailure(simulation.value));
+        }
+
+        const txSignature = await transact(async (wallet: Web3MobileWallet) => {
+          await authorizeWalletSession(wallet, publicKey.toBase58());
+          const signatures = await wallet.signAndSendTransactions({
+            transactions: [transaction],
+          });
+          return normalizeSignature(signatures[0]);
+        });
+
+        await connection.confirmTransaction(
+          {
+            signature: txSignature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        return {
+          signature: txSignature,
+          duelAddress: duelPublicKey.toBase58(),
+          programId: D_ARENA_PROGRAM_ID.toBase58(),
+        };
+      } finally {
+        setSending(false);
+      }
+    },
+    [authorizeWalletSession, cluster, connection, publicKey],
+  );
+
   return {
     publicKey,
     connected: !!storedPublicKey,
@@ -465,6 +912,9 @@ export function useWallet(): WalletHook {
     sendSOL,
     createDuel,
     joinDuel,
+    initializeProgramConfig,
+    getDuelSettlementContext,
+    settleDuel,
     connection,
   };
 }

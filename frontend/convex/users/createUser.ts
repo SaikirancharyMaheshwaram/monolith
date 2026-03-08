@@ -58,6 +58,11 @@ export const createUser = mutation({
       totalLosses: 0,
 
       redemptionVaultBalance: 0,
+      redemptionVaultLocked: false,
+      redemptionVaultLockedAt: undefined,
+      redemptionVaultUnlockedAt: undefined,
+      redemptionVaultRedeemedAt: undefined,
+      redemptionVaultRedeemedTotal: 0,
 
       activeDuelCount: 0,
 

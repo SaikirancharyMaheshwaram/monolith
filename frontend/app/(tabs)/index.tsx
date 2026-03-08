@@ -29,15 +29,21 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const STAKES = [0.1, 0.5, 1, 2];
 const START_DELAY_OPTIONS = [10, 30, 60];
-const LOBBY_FEED = [
-  "Hunter contract secured.",
-  "Stake creates real accountability.",
-  "Complete daily task or lose the gate.",
+const STORY_STEPS = [
+  { title: "Create", detail: "1 SOL moves into escrow and the duel waits for an opponent." },
+  { title: "Join", detail: "Escrow reaches 2 SOL and the backend flips the duel to active." },
+  { title: "Check-in", detail: "Daily proof stays off-chain so streak tracking feels instant." },
+  { title: "Settle", detail: "When the backend resolves the winner, the contract pays the final split." },
+];
+const LIVE_FEED = [
+  "Escrow creates real pressure for both players.",
+  "Daily proof is fast because the blockchain stays untouched during check-ins.",
+  "Settlement is only enabled after the duel is resolved.",
 ];
 const MISSION_BOARD = [
-  { title: "Daily Proof", status: "PENDING" },
-  { title: "Gate Discipline", status: "LIVE" },
-  { title: "Stake Safety", status: "SECURED" },
+  { title: "Create duel", status: "READY" },
+  { title: "Hit daily streak", status: "TRACKED" },
+  { title: "Settle winner", status: "LOCKED" },
 ];
 
 export default function HomeScreen() {
@@ -134,14 +140,14 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!scanning) return;
 
-    setScanProgress(0.08);
+    setScanProgress(0.1);
     const timer = setInterval(() => {
       setScanProgress((p) => {
         if (p >= 1) {
           clearInterval(timer);
           return 1;
         }
-        return Math.min(1, p + 0.08);
+        return Math.min(1, p + 0.1);
       });
     }, 220);
 
@@ -152,6 +158,7 @@ export default function HomeScreen() {
   const isNewPlayer = wallet.connected && !userLoading && !user;
   const hasActiveDuel = wallet.connected && !!user && !!activeDuel;
   const isIdleHunter = wallet.connected && !!user && !activeDuel;
+  const levelLabel = user ? String(Math.floor(xp / 100) + 1).padStart(2, "0") : "00";
 
   const handleRegister = async () => {
     if (!walletAddress || usernameInput.trim().length < 3) return;
@@ -182,7 +189,7 @@ export default function HomeScreen() {
     });
 
     await fetchOpenDuels(user._id);
-    setArenaMessage("Challenge created. Share invite link from Duel tab.");
+    setArenaMessage("Challenge forged. Open the duel board to share the invite.");
   };
 
   const handleJoinPublic = async () => {
@@ -191,10 +198,10 @@ export default function HomeScreen() {
     const candidate = openDuels.find((duel) => duel.player1 !== user._id);
     if (!candidate) {
       setScanning(true);
-      setArenaMessage("Searching for opponent...");
+      setArenaMessage("Scanning for a live rival...");
       setTimeout(() => {
         setScanning(false);
-        setArenaMessage("No open gate found yet. Try again shortly.");
+        setArenaMessage("No live rival found yet. Try again in a bit.");
       }, 2500);
       return;
     }
@@ -214,14 +221,26 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <SystemWindow>
+        <SystemWindow style={styles.heroWindow}>
+          <View style={styles.heroGlowLarge} />
+          <View style={styles.heroGlowSmall} />
+
           <View style={styles.rowBetween}>
-            <Text style={styles.sectionLabel}>CORE STATISTICS</Text>
-            <Text style={styles.levelLabel}>LVL. {user ? Math.floor(xp / 100) + 1 : 0}</Text>
+            <View style={styles.heroHeaderCopy}>
+              <Text style={styles.sectionLabel}>Orange Arena</Text>
+              <Text style={styles.heroTitle}>Stake up. Check in daily. Win the duel.</Text>
+              <Text style={styles.heroSubtitle}>
+                Built for simple friend challenges where the money is on-chain, the streak loop is off-chain, and the settlement moment feels earned.
+              </Text>
+            </View>
+            <View style={styles.heroLevelBadge}>
+              <Text style={styles.heroLevelValue}>LV {levelLabel}</Text>
+              <Text style={styles.heroLevelLabel}>hunter tier</Text>
+            </View>
           </View>
 
           <View style={styles.rowBetween}>
-            <Text style={styles.walletLabel}>◎ SolScan</Text>
+            <Text style={styles.walletLabel}>Wallet status</Text>
             <ConnectButton
               connected={wallet.connected}
               connecting={wallet.connecting}
@@ -232,17 +251,17 @@ export default function HomeScreen() {
           </View>
 
           {isWalletDisconnected ? (
-            <Text style={styles.systemOffline}>SYSTEM OFFLINE</Text>
+            <Text style={styles.systemOffline}>Connect wallet to unlock duels, streak tracking, and settlement.</Text>
           ) : (
             <View style={styles.statsGrid}>
               <StatBlock
-                label="PLAYER STATUS"
-                value={tier || "INITIATE"}
-                unit={username ? `@${username}` : "UNSET"}
-                valueColor={C.green}
+                label="Player Rank"
+                value={tier || "ROOKIE"}
+                unit={username ? `@${username}` : "pending"}
+                valueColor={C.success}
               />
               <StatBlock
-                label="SHADOW VAULT"
+                label="Vault Balance"
                 value={vaultBalance.toFixed(2)}
                 unit="SOL"
                 valueColor={C.purple}
@@ -253,19 +272,21 @@ export default function HomeScreen() {
 
         {isIdleHunter && (
           <TouchableOpacity
-            style={styles.emptyQuestBox}
-            activeOpacity={0.8}
+            style={styles.idleQuestBox}
+            activeOpacity={0.88}
             onPress={() => setShowArenaModal(true)}
           >
-            <Text style={styles.skullIcon}>☠</Text>
-            <Text style={styles.emptyQuestTitle}>No Active Gate Found</Text>
-            <Text style={styles.emptyQuestSub}>Search for opponent or create challenge</Text>
+            <Text style={styles.idleQuestBadge}>Arena Ready</Text>
+            <Text style={styles.idleQuestTitle}>No active duel yet.</Text>
+            <Text style={styles.idleQuestSub}>
+              Create a duel or auto-match into a public gate and start your streak.
+            </Text>
           </TouchableOpacity>
         )}
 
         {hasActiveDuel && activeDuel && (
           <QuestCard
-            title="THE TRIAL OF DISCIPLINE"
+            title="7-Day Discipline Run"
             opponentName={activeDuel.player2 ? `#${String(activeDuel.player2).slice(0, 6)}` : "Awaiting Hunter"}
             stakeLabel={`${activeDuel.stakeAmount} SOL`}
             progress={Math.min(1, duelProgressDays / 7)}
@@ -275,8 +296,37 @@ export default function HomeScreen() {
         )}
 
         {!isWalletDisconnected && !isNewPlayer && (
+          <SystemWindow style={styles.flowWindow}>
+            <Text style={styles.sectionLabel}>Duel Flow</Text>
+            <View style={styles.storyList}>
+              {STORY_STEPS.map((step, index) => (
+                <View key={step.title} style={styles.storyRow}>
+                  <View style={styles.storyIndex}>
+                    <Text style={styles.storyIndexText}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.storyBody}>
+                    <Text style={styles.storyTitle}>{step.title}</Text>
+                    <Text style={styles.storyDetail}>{step.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </SystemWindow>
+        )}
+
+        {!isWalletDisconnected && !isNewPlayer && (
+          <SystemWindow style={styles.quickActionWindow}>
+            <Text style={styles.sectionLabel}>Quick Actions</Text>
+            <View style={styles.actionStack}>
+              <GateButton label="Match Me Now" onPress={() => setShowArenaModal(true)} />
+              <GateButton label="Open Duel Board" variant="ghost" onPress={() => router.push("/duel")} />
+            </View>
+          </SystemWindow>
+        )}
+
+        {!isWalletDisconnected && !isNewPlayer && (
           <SystemWindow style={styles.missionWindow}>
-            <Text style={styles.sectionLabel}>MISSION BOARD</Text>
+            <Text style={styles.sectionLabel}>Mission Track</Text>
             <View style={styles.missionList}>
               {MISSION_BOARD.map((item) => (
                 <View key={item.title} style={styles.missionRow}>
@@ -289,27 +339,13 @@ export default function HomeScreen() {
           </SystemWindow>
         )}
 
-        {!isWalletDisconnected && !isNewPlayer && (
-          <SystemWindow>
-            <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
-            <View style={styles.actionStack}>
-              <GateButton label="Search For Opponent" onPress={() => setShowArenaModal(true)} />
-              <GateButton
-                label="Create Challenge"
-                variant="ghost"
-                onPress={() => setShowArenaModal(true)}
-              />
-            </View>
-          </SystemWindow>
-        )}
-
         {!isWalletDisconnected && (
           <SystemWindow style={styles.feedWindow}>
-            <Text style={styles.sectionLabel}>HUNTER FEED</Text>
+            <Text style={styles.sectionLabel}>Live Feed</Text>
             <View style={styles.feedList}>
-              {LOBBY_FEED.map((line) => (
+              {LIVE_FEED.map((line) => (
                 <Text key={line} style={styles.feedText}>
-                  ▸ {line}
+                  • {line}
                 </Text>
               ))}
             </View>
@@ -320,7 +356,7 @@ export default function HomeScreen() {
       <Modal transparent visible={showRegistration && isNewPlayer} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>SYSTEM REGISTRATION</Text>
+            <Text style={styles.modalTitle}>Register Hunter</Text>
             <Text style={styles.modalLabel}>Choose username</Text>
             <TextInput
               style={styles.input}
@@ -331,8 +367,8 @@ export default function HomeScreen() {
               onChangeText={setUsernameInput}
             />
 
-            <Text style={styles.modalLabel}>Select character</Text>
-            <View style={styles.chipRow}>
+            <Text style={styles.modalLabel}>Select avatar</Text>
+            <View style={styles.characterGrid}>
               {CHARACTER_OPTIONS.map((ch) => {
                 const selected = selectedCharacter === ch.id;
                 return (
@@ -351,7 +387,7 @@ export default function HomeScreen() {
             </View>
 
             <GateButton
-              label={userLoading ? "Registering..." : "Confirm"}
+              label={userLoading ? "Registering..." : "Enter Arena"}
               onPress={handleRegister}
               disabled={userLoading || usernameInput.trim().length < 3}
             />
@@ -362,9 +398,8 @@ export default function HomeScreen() {
       <Modal transparent visible={showArenaModal && !!user} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>ARENA SEARCH</Text>
-
-            <Text style={styles.modalLabel}>Select stake</Text>
+            <Text style={styles.modalTitle}>Forge a Duel</Text>
+            <Text style={styles.modalLabel}>Pick stake</Text>
             <View style={styles.chipRow}>
               {STAKES.map((s) => {
                 const selected = stake === s;
@@ -380,7 +415,7 @@ export default function HomeScreen() {
               })}
             </View>
 
-            <Text style={styles.modalLabel}>Select start time</Text>
+            <Text style={styles.modalLabel}>Start countdown</Text>
             <View style={styles.chipRow}>
               {START_DELAY_OPTIONS.map((mins) => {
                 const selected = startDelayMins === mins;
@@ -396,9 +431,14 @@ export default function HomeScreen() {
               })}
             </View>
 
+            <View style={styles.energyStrip}>
+              <Text style={styles.energyTitle}>Game loop</Text>
+              <Text style={styles.energyText}>Create escrow, join gate, keep daily proof, settle when resolved.</Text>
+            </View>
+
             {scanning ? (
               <View style={styles.scanBlock}>
-                <Text style={styles.scanText}>Searching for opponent...</Text>
+                <Text style={styles.scanText}>Searching for a rival...</Text>
                 <ProgressBar progress={scanProgress} animated={false} />
               </View>
             ) : null}
@@ -407,7 +447,7 @@ export default function HomeScreen() {
 
             <View style={styles.actionStack}>
               <GateButton
-                label={createLoading ? "Creating..." : "Create Challenge"}
+                label={createLoading ? "Forging..." : "Create Challenge"}
                 onPress={handleCreateChallenge}
                 disabled={createLoading || joinLoading}
               />
@@ -426,11 +466,11 @@ export default function HomeScreen() {
       <Modal transparent visible={showInviteModal && !!inviteDuel && !!user} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>DUEL INVITE</Text>
+            <Text style={styles.modalTitle}>Invite Found</Text>
             <Text style={styles.modalLabel}>Opponent: #{String(inviteDuel?.player1 ?? "").slice(0, 6)}</Text>
             <Text style={styles.modalLabel}>Stake: {inviteDuel?.stakeAmount ?? 0} SOL</Text>
             <Text style={styles.modalLabel}>
-              Start time: {inviteDuel?.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}
+              Starts: {inviteDuel?.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}
             </Text>
 
             <View style={styles.actionStack}>
@@ -451,13 +491,41 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: 16,
-    gap: 12,
+    gap: 14,
     paddingBottom: 42,
   },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 14,
+  },
+  heroWindow: {
+    overflow: "hidden",
+    borderColor: C.manaBorder,
+    backgroundColor: "rgba(42,20,8,0.97)",
+  },
+  heroGlowLarge: {
+    position: "absolute",
+    right: -40,
+    top: -28,
+    width: 180,
+    height: 180,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,138,31,0.16)",
+  },
+  heroGlowSmall: {
+    position: "absolute",
+    left: -18,
+    bottom: -30,
+    width: 120,
+    height: 120,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,179,71,0.1)",
+  },
+  heroHeaderCopy: {
+    flex: 1,
+    gap: 6,
   },
   sectionLabel: {
     fontFamily: "monospace",
@@ -465,131 +533,202 @@ const styles = StyleSheet.create({
     color: C.mana,
     letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 14,
   },
-  levelLabel: {
-    fontSize: 10,
-    color: C.slate500,
+  heroTitle: {
+    color: C.white,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "800",
+  },
+  heroSubtitle: {
+    color: C.slate400,
+    fontSize: 14,
+    lineHeight: 21,
+    maxWidth: 520,
+  },
+  heroLevelBadge: {
+    minWidth: 92,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+  },
+  heroLevelValue: {
+    color: C.white,
+    fontSize: 20,
     fontFamily: "monospace",
-    marginBottom: 14,
+    fontWeight: "800",
+  },
+  heroLevelLabel: {
+    color: C.slate500,
+    fontSize: 10,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+    marginTop: 3,
   },
   walletLabel: {
     color: C.slate400,
     fontFamily: "monospace",
     fontSize: 12,
+    marginTop: 18,
   },
   statsGrid: {
     marginTop: 16,
     flexDirection: "row",
-    gap: 24,
+    gap: 12,
   },
   systemOffline: {
     marginTop: 16,
-    color: C.slate600,
-    fontFamily: "monospace",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    fontStyle: "italic",
+    color: C.slate500,
+    fontSize: 13,
+    lineHeight: 20,
   },
-  emptyQuestBox: {
-    borderWidth: 2,
-    borderStyle: "dashed",
-    borderColor: C.slate800,
-    borderRadius: 8,
-    padding: 42,
-    alignItems: "center",
-    backgroundColor: "transparent",
+  idleQuestBox: {
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+    borderRadius: 18,
+    padding: 22,
+    backgroundColor: "rgba(255,138,31,0.08)",
+    gap: 8,
   },
-  skullIcon: {
-    fontSize: 36,
-    color: C.slate800,
-    marginBottom: 16,
-  },
-  emptyQuestTitle: {
+  idleQuestBadge: {
+    alignSelf: "flex-start",
+    color: C.coal,
+    backgroundColor: C.success,
+    borderRadius: 999,
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     fontFamily: "monospace",
     fontSize: 10,
-    color: C.slate600,
-    letterSpacing: 3,
     textTransform: "uppercase",
-    textAlign: "center",
   },
-  emptyQuestSub: {
-    fontSize: 11,
-    color: C.slate700,
-    marginTop: 8,
-    fontStyle: "italic",
-    textAlign: "center",
+  idleQuestTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: C.white,
+  },
+  idleQuestSub: {
+    color: C.slate400,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  flowWindow: {
+    borderColor: C.glassBorder,
+  },
+  storyList: {
+    gap: 10,
+    marginTop: 12,
+  },
+  storyRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  storyIndex: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.emberSoft,
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+  },
+  storyIndexText: {
+    color: C.mana,
+    fontFamily: "monospace",
+    fontWeight: "800",
+  },
+  storyBody: {
+    flex: 1,
+    gap: 4,
+  },
+  storyTitle: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  storyDetail: {
+    color: C.slate400,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  quickActionWindow: {
+    borderColor: "rgba(255,107,26,0.3)",
+    backgroundColor: "rgba(255,107,26,0.08)",
   },
   actionStack: {
     gap: 10,
-  },
-  feedWindow: {
-    borderColor: C.manaBorder,
-    backgroundColor: "rgba(0,209,255,0.04)",
+    marginTop: 12,
   },
   missionWindow: {
     borderColor: C.purpleBorder,
-    backgroundColor: "rgba(153,69,255,0.05)",
+    backgroundColor: "rgba(255,179,71,0.08)",
   },
   missionList: {
     gap: 10,
+    marginTop: 12,
   },
   missionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingBottom: 8,
+    gap: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.06)",
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 8,
-    backgroundColor: C.green,
+    width: 9,
+    height: 9,
+    borderRadius: 99,
+    backgroundColor: C.success,
   },
   missionTitle: {
     flex: 1,
-    color: C.slate400,
-    fontFamily: "monospace",
-    fontSize: 12,
+    color: C.white,
+    fontSize: 13,
   },
   missionStatus: {
     color: C.purple,
     fontFamily: "monospace",
     fontSize: 10,
-    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  feedWindow: {
+    borderColor: "rgba(255,138,31,0.28)",
+    backgroundColor: "rgba(255,138,31,0.06)",
   },
   feedList: {
-    gap: 6,
+    gap: 8,
+    marginTop: 12,
   },
   feedText: {
     color: C.slate400,
-    fontSize: 12,
-    fontFamily: "monospace",
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 19,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.82)",
+    backgroundColor: "rgba(11,6,3,0.88)",
     justifyContent: "center",
     padding: 18,
   },
   modalCard: {
-    backgroundColor: "rgba(6,15,28,0.98)",
-    borderRadius: 10,
+    backgroundColor: "rgba(35,19,9,0.98)",
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: C.manaBorder,
     padding: 18,
     gap: 10,
   },
   modalTitle: {
-    color: C.mana,
-    fontSize: 12,
-    fontFamily: "monospace",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    marginBottom: 4,
+    color: C.white,
+    fontSize: 22,
+    fontWeight: "800",
   },
   modalLabel: {
     color: C.slate400,
@@ -600,15 +739,14 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: C.slate700,
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: C.glassBorder,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     color: C.white,
-    fontFamily: "monospace",
-    backgroundColor: "rgba(255,255,255,0.02)",
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
-  chipRow: {
+  characterGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
@@ -618,10 +756,10 @@ const styles = StyleSheet.create({
     width: "31%",
     minWidth: 92,
     borderWidth: 1,
-    borderColor: C.slate700,
-    borderRadius: 6,
+    borderColor: C.glassBorder,
+    borderRadius: 14,
     padding: 6,
-    backgroundColor: "rgba(255,255,255,0.02)",
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
   characterCardSelected: {
     borderColor: C.mana,
@@ -630,16 +768,22 @@ const styles = StyleSheet.create({
   characterImage: {
     width: "100%",
     height: 72,
-    borderRadius: 4,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     marginBottom: 6,
   },
   chip: {
     borderWidth: 1,
-    borderColor: C.slate700,
-    borderRadius: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "transparent",
+    borderColor: C.glassBorder,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
   chipSelected: {
     borderColor: C.mana,
@@ -652,11 +796,30 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   chipTextSelected: {
-    color: C.mana,
+    color: C.white,
+  },
+  energyStrip: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(255,179,71,0.08)",
+    borderWidth: 1,
+    borderColor: C.purpleBorder,
+    gap: 4,
+    marginVertical: 6,
+  },
+  energyTitle: {
+    color: C.purple,
+    fontFamily: "monospace",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  energyText: {
+    color: C.white,
+    fontSize: 13,
+    lineHeight: 19,
   },
   scanBlock: {
-    marginTop: 2,
-    marginBottom: 4,
     gap: 8,
   },
   scanText: {
@@ -667,8 +830,7 @@ const styles = StyleSheet.create({
   },
   arenaMessage: {
     color: C.slate400,
-    fontSize: 11,
-    fontStyle: "italic",
-    marginBottom: 4,
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

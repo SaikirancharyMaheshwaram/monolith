@@ -10,7 +10,7 @@ type Props = {
 
 export function StatBlock({ label, value, unit, valueColor = C.white }: Props) {
   return (
-    <View>
+    <View style={styles.card}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.valueRow}>
         <Text style={[styles.value, { color: valueColor }]}>{value}</Text>
@@ -21,12 +21,21 @@ export function StatBlock({ label, value, unit, valueColor = C.white }: Props) {
 }
 
 const styles = StyleSheet.create({
+  card: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+  },
   label: {
     fontSize: 9,
     color: C.slate400,
     fontFamily: "monospace",
-    letterSpacing: 1,
-    marginBottom: 4,
+    letterSpacing: 1.2,
+    marginBottom: 8,
     textTransform: "uppercase",
   },
   valueRow: {
@@ -35,13 +44,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   value: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "700",
     fontFamily: "monospace",
   },
   unit: {
     fontSize: 9,
-    color: C.slate600,
+    color: C.slate500,
     fontFamily: "monospace",
     marginBottom: 4,
   },

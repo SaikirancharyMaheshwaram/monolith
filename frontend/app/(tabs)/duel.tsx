@@ -23,6 +23,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const STAKES = [0.1, 0.5, 1, 2];
 const START_MINUTES = [10, 30, 60, 120];
+const FLOW_RAIL = [
+  { title: "Escrow", body: "Create and join move SOL on-chain and lock custody." },
+  { title: "Daily loop", body: "Check-ins and strikes live off-chain for speed." },
+  { title: "Resolution", body: "Once resolved, the frontend enables the settlement moment." },
+];
 
 export default function DuelHubScreen() {
   const wallet = useWallet();
@@ -74,6 +79,8 @@ export default function DuelHubScreen() {
     if (inviteDuel.player1 === user._id) return false;
     return true;
   }, [inviteDuel, user]);
+  const inviteOnchainDuelAddress = (inviteDuel as any)?.onchainDuelAddress as string | undefined;
+  const inviteOnchainEscrowAddress = (inviteDuel as any)?.onchainEscrowAddress as string | undefined;
 
   const handleCreateInvite = async () => {
     if (!walletAddress) return;
@@ -137,7 +144,7 @@ export default function DuelHubScreen() {
       Alert.alert("Read Contract", "Please read and confirm the contract first.");
       return;
     }
-    if (!inviteDuel.onchainDuelAddress) {
+    if (!inviteOnchainDuelAddress) {
       Alert.alert("Join failed", "This duel is missing on-chain metadata. Recreate the invite.");
       return;
     }
@@ -148,8 +155,8 @@ export default function DuelHubScreen() {
       | null = null;
     try {
       onChainJoin = await wallet.joinDuel({
-        duelAddress: inviteDuel.onchainDuelAddress,
-        escrowAddress: inviteDuel.onchainEscrowAddress,
+        duelAddress: inviteOnchainDuelAddress,
+        escrowAddress: inviteOnchainEscrowAddress,
       });
 
       await joinFriendDuel({
@@ -183,7 +190,7 @@ export default function DuelHubScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centered}>
-          <Text style={styles.header}>DUEL TERMINAL</Text>
+          <Text style={styles.header}>DUEL BOARD LOCKED</Text>
           <Text style={styles.sub}>Connect wallet to create or join friend duels.</Text>
         </View>
       </SafeAreaView>
@@ -214,8 +221,27 @@ export default function DuelHubScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scroll}>
+        <SystemWindow style={styles.heroWindow}>
+          <View style={styles.heroGlow} />
+          <View style={styles.rowBetween}>
+            <View style={styles.heroCopy}>
+              <Text style={styles.sectionLabel}>Duel Board</Text>
+              <Text style={styles.heroTitle}>Run the full duel loop from one screen.</Text>
+              <Text style={styles.heroText}>
+                Invite a friend, monitor live gates, and move from resolution to settlement without losing the game feel.
+              </Text>
+            </View>
+            <View style={styles.livePill}>
+              <Text style={styles.livePillText}>{activeDuels.length} ACTIVE</Text>
+            </View>
+          </View>
+          <View style={styles.heroActionRow}>
+            <GateButton label="Invite Friend" onPress={() => setShowCreateModal(true)} />
+          </View>
+        </SystemWindow>
+
         <SystemWindow>
-          <Text style={styles.sectionLabel}>JOIN BY DUEL ID</Text>
+          <Text style={styles.sectionLabel}>Open by Duel ID</Text>
           <TextInput
             value={manualDuelId}
             onChangeText={setManualDuelId}
@@ -224,28 +250,32 @@ export default function DuelHubScreen() {
             autoCapitalize="none"
             style={styles.input}
           />
-          <View style={styles.actionStack}>
-            <GateButton label="Load Invite" onPress={handleResolveManualInvite} />
+          <GateButton label="Load Invite" onPress={handleResolveManualInvite} />
+          <Text style={styles.hint}>Deep links land here automatically. Manual load helps during testing.</Text>
+        </SystemWindow>
+
+        <SystemWindow style={styles.flowWindow}>
+          <Text style={styles.sectionLabel}>Game Rail</Text>
+          <View style={styles.railList}>
+            {FLOW_RAIL.map((item) => (
+              <View key={item.title} style={styles.railCard}>
+                <Text style={styles.railTitle}>{item.title}</Text>
+                <Text style={styles.railBody}>{item.body}</Text>
+              </View>
+            ))}
           </View>
-          <Text style={styles.hint}>Invite links also auto-open here via deep link.</Text>
         </SystemWindow>
 
         {resolvedInviteId && inviteDuel && (
           <SystemWindow style={styles.inviteWindow}>
-            <Text style={styles.sectionLabel}>FRIEND INVITE FOUND</Text>
-            <Text style={styles.meta}>Duel ID:</Text>
+            <Text style={styles.sectionLabel}>Friend Invite Found</Text>
+            <Text style={styles.inviteTitle}>{inviteDuel.stakeAmount} SOL challenge</Text>
+            <Text style={styles.meta}>Starts: {inviteDuel.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}</Text>
+            <Text style={styles.meta}>Status: {inviteDuel.status}</Text>
+            <Text style={styles.meta}>Duel ID</Text>
             <Text style={styles.selectableId} selectable>
               {String(inviteDuel._id)}
             </Text>
-            <Text style={styles.hint}>Long press duel id to copy.</Text>
-            <Text style={styles.meta}>Stake: {inviteDuel.stakeAmount} SOL</Text>
-            <Text style={styles.meta}>
-              Duration: 7 days
-            </Text>
-            <Text style={styles.meta}>
-              Starts: {inviteDuel.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}
-            </Text>
-            <Text style={styles.meta}>Status: {inviteDuel.status}</Text>
 
             <View style={styles.topActions}>
               <GateButton
@@ -267,22 +297,7 @@ export default function DuelHubScreen() {
           </SystemWindow>
         )}
 
-        <SystemWindow>
-          <View style={styles.rowBetween}>
-            <View>
-              <Text style={styles.sectionLabel}>DUEL TERMINAL</Text>
-              <Text style={styles.sub}>{user.username} • {user.tier}</Text>
-            </View>
-            <View style={styles.livePill}>
-              <Text style={styles.livePillText}>{activeDuels.length} ACTIVE</Text>
-            </View>
-          </View>
-          <View style={styles.topActions}>
-            <GateButton label="Invite Friend" onPress={() => setShowCreateModal(true)} />
-          </View>
-        </SystemWindow>
-
-        <Section title="ACTIVE GATES" emptyText="No active gate running.">
+        <Section title="Active Gates" emptyText="No active gate running.">
           {activeDuels.map((duel) => (
             <DuelCard
               key={duel._id}
@@ -296,7 +311,7 @@ export default function DuelHubScreen() {
           ))}
         </Section>
 
-        <Section title="OPEN INVITES" emptyText="No open invites.">
+        <Section title="Open Invites" emptyText="No open invites.">
           {openDuels.map((duel) => (
             <DuelCard
               key={duel._id}
@@ -308,7 +323,7 @@ export default function DuelHubScreen() {
           ))}
         </Section>
 
-        <Section title="DUEL HISTORY" emptyText="No completed duels yet.">
+        <Section title="Duel History" emptyText="No completed duels yet.">
           {historyDuels.map((duel) => (
             <DuelCard key={duel._id} duel={duel} mineId={user._id} onShare={shareInviteLink} compact />
           ))}
@@ -318,7 +333,7 @@ export default function DuelHubScreen() {
       <Modal transparent visible={showCreateModal} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>FORGE INVITE GATE</Text>
+            <Text style={styles.modalTitle}>Forge Invite Gate</Text>
 
             <Text style={styles.modalLabel}>Stake</Text>
             <View style={styles.chipRow}>
@@ -350,6 +365,11 @@ export default function DuelHubScreen() {
               })}
             </View>
 
+            <View style={styles.summaryStrip}>
+              <Text style={styles.summaryTitle}>What happens next</Text>
+              <Text style={styles.summaryText}>Create locks escrow on-chain. Your friend joins. Daily streaks stay off-chain until settlement.</Text>
+            </View>
+
             <View style={styles.actionStack}>
               <GateButton
                 label={createLoading ? "Forging..." : "Create Invite"}
@@ -365,10 +385,9 @@ export default function DuelHubScreen() {
       <Modal transparent visible={showContractModal} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>SELF CONTRACT</Text>
+            <Text style={styles.modalTitle}>Self Contract</Text>
             <Text style={styles.contractText}>
-              By joining this gate, you commit to a 7-day discipline challenge. Missing daily proof may cost your stake.
-              Resolution is backend-authoritative.
+              Join a 7-day discipline duel. Stakes are already secured on-chain, daily proof is tracked off-chain, and settlement only unlocks after resolution.
             </Text>
             {inviteDuel ? (
               <View style={styles.contractMetaWrap}>
@@ -380,7 +399,7 @@ export default function DuelHubScreen() {
 
             <TouchableOpacity style={styles.checkRow} onPress={() => setReadChecked((v) => !v)}>
               <View style={[styles.checkBox, readChecked && styles.checkBoxActive]} />
-              <Text style={styles.checkText}>I have read and accept this contract.</Text>
+              <Text style={styles.checkText}>I understand the rules and accept the payout path.</Text>
             </TouchableOpacity>
 
             <View style={styles.actionStack}>
@@ -434,12 +453,13 @@ function DuelCard({
 }) {
   const isCreator = duel.player1 === mineId;
   const showInviteActions = duel.status === "OPEN" && isCreator;
+  const statusTone = duel.status === "ACTIVE" ? styles.statusActive : duel.status === "OPEN" ? styles.statusOpen : styles.statusMuted;
 
   return (
     <View style={[styles.card, compact && styles.compactCard]}>
       <View style={styles.rowBetween}>
         <Text style={styles.cardTitle}>{duel.mode} GATE</Text>
-        <Text style={[styles.status, duel.status === "ACTIVE" && styles.statusActive]}>{duel.status}</Text>
+        <Text style={[styles.status, statusTone]}>{duel.status}</Text>
       </View>
 
       <View style={styles.metaRow}>
@@ -447,7 +467,7 @@ function DuelCard({
         <Text style={styles.meta}>Start: {duel.startTime ? new Date(duel.startTime).toLocaleString() : "TBD"}</Text>
       </View>
 
-      <Text style={styles.meta}>Duel ID:</Text>
+      <Text style={styles.meta}>Duel ID</Text>
       <Text style={styles.selectableId} selectable>
         {String(duel._id)}
       </Text>
@@ -492,7 +512,7 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: 16,
-    gap: 12,
+    gap: 14,
     paddingBottom: 44,
   },
   centered: {
@@ -500,6 +520,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
+    backgroundColor: C.bg,
   },
   header: {
     fontFamily: "monospace",
@@ -514,6 +535,21 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     fontSize: 11,
     textTransform: "uppercase",
+    textAlign: "center",
+  },
+  heroWindow: {
+    overflow: "hidden",
+    borderColor: C.manaBorder,
+    backgroundColor: "rgba(42,20,8,0.96)",
+  },
+  heroGlow: {
+    position: "absolute",
+    top: -28,
+    right: -36,
+    width: 170,
+    height: 170,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,138,31,0.16)",
   },
   rowBetween: {
     flexDirection: "row",
@@ -521,38 +557,55 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
   },
+  heroCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  heroTitle: {
+    color: C.white,
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: "800",
+  },
+  heroText: {
+    color: C.slate400,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  heroActionRow: {
+    marginTop: 16,
+  },
   sectionLabel: {
     fontFamily: "monospace",
     fontSize: 10,
     color: C.mana,
     letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   input: {
     borderWidth: 1,
     borderColor: C.glassBorder,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.02)",
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
     color: C.white,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
-    fontFamily: "monospace",
-    fontSize: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+    fontSize: 14,
   },
   hint: {
     color: C.slate500,
-    fontSize: 11,
-    fontStyle: "italic",
-    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
   },
   livePill: {
     borderWidth: 1,
     borderColor: C.manaBorder,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     backgroundColor: C.manaDim,
   },
   livePillText: {
@@ -561,9 +614,40 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     letterSpacing: 1,
   },
+  flowWindow: {
+    borderColor: C.purpleBorder,
+    backgroundColor: "rgba(255,179,71,0.08)",
+  },
+  railList: {
+    gap: 10,
+  },
+  railCard: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+  },
+  railTitle: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  railBody: {
+    color: C.slate400,
+    fontSize: 13,
+    lineHeight: 19,
+  },
   inviteWindow: {
-    borderColor: C.green,
-    backgroundColor: "rgba(0,255,163,0.08)",
+    borderColor: C.success,
+    backgroundColor: "rgba(255,210,111,0.08)",
+  },
+  inviteTitle: {
+    color: C.white,
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 8,
   },
   selectableId: {
     color: C.white,
@@ -574,11 +658,11 @@ const styles = StyleSheet.create({
   inviteHint: {
     color: C.slate500,
     marginTop: 8,
-    fontSize: 11,
-    fontStyle: "italic",
+    fontSize: 12,
+    lineHeight: 18,
   },
   topActions: {
-    marginTop: 10,
+    marginTop: 12,
   },
   list: {
     gap: 10,
@@ -591,13 +675,13 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
     borderColor: C.glassBorder,
-    backgroundColor: "rgba(255,255,255,0.02)",
-    borderRadius: 6,
-    padding: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 16,
+    padding: 14,
     gap: 8,
   },
   compactCard: {
-    opacity: 0.8,
+    opacity: 0.82,
   },
   cardTitle: {
     color: C.white,
@@ -606,42 +690,48 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   status: {
-    color: C.slate400,
     fontFamily: "monospace",
     fontSize: 10,
     letterSpacing: 1,
+    textTransform: "uppercase",
   },
   statusActive: {
-    color: C.green,
+    color: C.success,
+  },
+  statusOpen: {
+    color: C.mana,
+  },
+  statusMuted: {
+    color: C.slate400,
   },
   metaRow: {
     gap: 4,
   },
   meta: {
     color: C.slate400,
-    fontSize: 11,
-    fontFamily: "monospace",
+    fontSize: 12,
+    lineHeight: 18,
   },
   inlineActions: {
     flexDirection: "row",
     gap: 8,
-    marginTop: 2,
+    marginTop: 4,
   },
   inlineButton: {
     borderWidth: 1,
     borderColor: C.manaBorder,
     backgroundColor: C.manaDim,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 4,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 999,
   },
   inlineButtonDanger: {
     borderWidth: 1,
-    borderColor: C.purpleBorder,
-    backgroundColor: C.purpleDim,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 4,
+    borderColor: "rgba(255,107,26,0.4)",
+    backgroundColor: "rgba(255,107,26,0.12)",
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 999,
   },
   inlineButtonText: {
     color: C.white,
@@ -651,25 +741,22 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.82)",
+    backgroundColor: "rgba(11,6,3,0.88)",
     justifyContent: "center",
     padding: 18,
   },
   modalCard: {
-    backgroundColor: "rgba(6,15,28,0.98)",
-    borderRadius: 10,
+    backgroundColor: "rgba(35,19,9,0.98)",
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: C.manaBorder,
     padding: 18,
     gap: 10,
   },
   modalTitle: {
-    color: C.mana,
-    fontSize: 12,
-    fontFamily: "monospace",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    marginBottom: 4,
+    color: C.white,
+    fontSize: 22,
+    fontWeight: "800",
   },
   modalLabel: {
     color: C.slate400,
@@ -680,8 +767,8 @@ const styles = StyleSheet.create({
   },
   contractText: {
     color: C.slate400,
-    fontSize: 12,
-    lineHeight: 19,
+    fontSize: 13,
+    lineHeight: 20,
   },
   contractMetaWrap: {
     gap: 4,
@@ -694,11 +781,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   checkBox: {
-    width: 18,
-    height: 18,
+    width: 20,
+    height: 20,
     borderWidth: 1,
     borderColor: C.slate500,
-    borderRadius: 3,
+    borderRadius: 5,
     backgroundColor: "transparent",
   },
   checkBoxActive: {
@@ -708,7 +795,8 @@ const styles = StyleSheet.create({
   checkText: {
     flex: 1,
     color: C.slate400,
-    fontSize: 11,
+    fontSize: 12,
+    lineHeight: 18,
   },
   chipRow: {
     flexDirection: "row",
@@ -718,11 +806,11 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: C.slate700,
-    borderRadius: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "transparent",
+    borderColor: C.glassBorder,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
   chipSelected: {
     borderColor: C.mana,
@@ -735,7 +823,27 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   chipTextSelected: {
+    color: C.white,
+  },
+  summaryStrip: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(255,138,31,0.08)",
+    borderWidth: 1,
+    borderColor: C.manaBorder,
+    gap: 4,
+  },
+  summaryTitle: {
     color: C.mana,
+    fontFamily: "monospace",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  summaryText: {
+    color: C.white,
+    fontSize: 13,
+    lineHeight: 19,
   },
   actionStack: {
     gap: 10,

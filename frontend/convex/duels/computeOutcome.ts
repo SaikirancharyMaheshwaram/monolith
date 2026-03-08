@@ -10,6 +10,7 @@ export const computeOutcome = mutation({
   },
 
   handler: async (ctx, args) => {
+    const now = Date.now();
     const duel = await ctx.db.get(args.duelId);
 
     if (!duel) throw new Error("Duel not found");
@@ -29,8 +30,6 @@ export const computeOutcome = mutation({
     if (duel.status !== "ACTIVE") throw new Error("Duel not active");
 
     if (duel.resolved) throw new Error("Duel already resolved");
-
-    const now = Date.now();
 
     if (!duel.endTime || now < duel.endTime)
       throw new Error("Duel has not ended yet");
@@ -90,13 +89,51 @@ export const computeOutcome = mutation({
       createdAt: now,
     });
 
+    const player1 = await ctx.db.get(duel.player1);
+    const player2 = duel.player2 ? await ctx.db.get(duel.player2) : null;
+    const winnerId =
+      outcome === "PLAYER1_WIN"
+        ? duel.player1
+        : outcome === "PLAYER2_WIN"
+          ? duel.player2
+          : undefined;
+    const loserVaultCredit =
+      outcome === "PLAYER1_WIN" || outcome === "PLAYER2_WIN"
+        ? duel.stakeAmount * 0.25
+        : 0;
+
+    if (player1 && player2) {
+      if (outcome === "PLAYER1_WIN") {
+        await ctx.db.patch(duel.player1, {
+          totalWins: (player1.totalWins ?? 0) + 1,
+          redemptionVaultLocked: false,
+          redemptionVaultUnlockedAt: now,
+        });
+        await ctx.db.patch(duel.player2, {
+          totalLosses: (player2.totalLosses ?? 0) + 1,
+          redemptionVaultBalance:
+            (player2.redemptionVaultBalance ?? 0) + loserVaultCredit,
+          redemptionVaultLocked: true,
+          redemptionVaultLockedAt: now,
+        });
+      } else if (outcome === "PLAYER2_WIN") {
+        await ctx.db.patch(duel.player2, {
+          totalWins: (player2.totalWins ?? 0) + 1,
+          redemptionVaultLocked: false,
+          redemptionVaultUnlockedAt: now,
+        });
+        await ctx.db.patch(duel.player1, {
+          totalLosses: (player1.totalLosses ?? 0) + 1,
+          redemptionVaultBalance:
+            (player1.redemptionVaultBalance ?? 0) + loserVaultCredit,
+          redemptionVaultLocked: true,
+          redemptionVaultLockedAt: now,
+        });
+      }
+    }
+
     await ctx.db.patch(args.duelId, {
-      winner:
-        outcome === "PLAYER1_WIN"
-          ? duel.player1
-          : outcome === "PLAYER2_WIN"
-            ? duel.player2
-            : undefined,
+      winner: winnerId,
       resolved: true,
       status: "COMPLETED",
     });

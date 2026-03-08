@@ -21,6 +21,11 @@ export default defineSchema({
     totalLosses: v.number(),
 
     redemptionVaultBalance: v.number(),
+    redemptionVaultLocked: v.boolean(),
+    redemptionVaultLockedAt: v.optional(v.number()),
+    redemptionVaultUnlockedAt: v.optional(v.number()),
+    redemptionVaultRedeemedAt: v.optional(v.number()),
+    redemptionVaultRedeemedTotal: v.number(),
 
     activeDuelCount: v.number(),
 
@@ -86,4 +91,19 @@ export default defineSchema({
     signature: v.string(),
     createdAt: v.number(),
   }).index("by_duel", ["duelId"]),
+
+  // convex/schema.ts
+  authChallenges: defineTable({
+    walletAddress: v.string(),
+    nonce: v.string(),
+    message: v.string(),
+    expiresAt: v.number(),
+  }),
+
+  sessions: defineTable({
+    walletAddress: v.string(),
+    token: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  }),
 });

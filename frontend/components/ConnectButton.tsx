@@ -6,6 +6,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { C } from "./lobby-theme";
 
 interface Props {
   connected: boolean;
@@ -31,7 +32,7 @@ export function ConnectButton({
   if (connecting) {
     return (
       <View style={[styles.button, styles.connecting]}>
-        <ActivityIndicator size="small" color="#fff" />
+        <ActivityIndicator size="small" color={C.white} />
         <Text style={styles.buttonText}>Connecting...</Text>
       </View>
     );
@@ -43,11 +44,11 @@ export function ConnectButton({
         style={[styles.button, styles.connected]}
         onPress={onDisconnect}
       >
-        <Ionicons name="wallet" size={18} color="#14F195" />
+        <Ionicons name="wallet" size={18} color={C.success} />
         <Text style={styles.connectedText}>
           {publicKey.slice(0, 4)}...{publicKey.slice(-4)}
         </Text>
-        <Ionicons name="close-circle-outline" size={16} color="#888" />
+        <Ionicons name="close-circle-outline" size={16} color={C.slate500} />
       </TouchableOpacity>
     );
   }
@@ -73,24 +74,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   disconnected: {
-    backgroundColor: "#9945FF",
+    backgroundColor: C.mana,
+    borderWidth: 1,
+    borderColor: "#ffc56d",
   },
   connected: {
-    backgroundColor: "#14F19520",
+    backgroundColor: "rgba(255,210,111,0.08)",
     borderWidth: 1,
-    borderColor: "#14F195",
+    borderColor: "rgba(255,210,111,0.4)",
   },
   connecting: {
-    backgroundColor: "#333",
+    backgroundColor: C.slate700,
   },
   buttonText: {
-    color: "#fff",
-    fontSize: 14,
+    color: C.white,
+    fontSize: 13,
     fontWeight: "600",
+    letterSpacing: 0.4,
   },
   connectedText: {
-    color: "#14F195",
-    fontSize: 14,
+    color: C.success,
+    fontSize: 13,
     fontWeight: "600",
     fontFamily: "monospace",
   },

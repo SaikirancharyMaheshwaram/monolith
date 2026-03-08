@@ -34,17 +34,18 @@ export function GateButton({
 const styles = StyleSheet.create({
   button: {
     width: "100%",
-    paddingVertical: 14,
-    borderRadius: 3,
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
   },
   primary: {
     backgroundColor: C.mana,
+    borderColor: "#ffc56d",
   },
   ghost: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.02)",
     borderColor: C.manaBorder,
   },
   disabled: {
@@ -53,15 +54,14 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: "monospace",
     fontWeight: "900",
-    fontStyle: "italic",
     fontSize: 12,
-    letterSpacing: 2,
+    letterSpacing: 1.6,
     textTransform: "uppercase",
   },
   primaryLabel: {
-    color: C.black,
+    color: C.coal,
   },
   ghostLabel: {
-    color: C.mana,
+    color: "#ffcf94",
   },
 });

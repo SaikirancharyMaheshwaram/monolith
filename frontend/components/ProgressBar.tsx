@@ -39,8 +39,8 @@ export function ProgressBar({ progress, animated = true }: Props) {
 const styles = StyleSheet.create({
   track: {
     width: "100%",
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    height: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 99,
     overflow: "hidden",
   },
@@ -48,9 +48,9 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: C.mana,
     borderRadius: 99,
-    shadowColor: C.mana,
+    shadowColor: C.ember,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 4,
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
   },
 });

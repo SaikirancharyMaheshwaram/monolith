@@ -16,6 +16,10 @@ type UserState = {
   tier: string;
   xp: number;
   vaultBalance: number;
+  vaultLocked: boolean;
+  vaultRedeemedTotal: number;
+  vaultUnlockedAt: number | null;
+  vaultLockedAt: number | null;
   loading: boolean;
   fetchUser: (wallet: string) => Promise<Doc<"users"> | null>;
   createUser: (input: CreateUserInput) => Promise<void>;
@@ -30,6 +34,10 @@ function patchFromUser(set: (fn: (state: UserState) => Partial<UserState>) => vo
     tier: user?.tier ?? "",
     xp: user?.xp ?? 0,
     vaultBalance: user?.redemptionVaultBalance ?? 0,
+    vaultLocked: user?.redemptionVaultLocked ?? false,
+    vaultRedeemedTotal: user?.redemptionVaultRedeemedTotal ?? 0,
+    vaultUnlockedAt: user?.redemptionVaultUnlockedAt ?? null,
+    vaultLockedAt: user?.redemptionVaultLockedAt ?? null,
   }));
 }
 
@@ -40,6 +48,10 @@ export const useUserStore = create<UserState>((set, get) => ({
   tier: "",
   xp: 0,
   vaultBalance: 0,
+  vaultLocked: false,
+  vaultRedeemedTotal: 0,
+  vaultUnlockedAt: null,
+  vaultLockedAt: null,
   loading: false,
 
   fetchUser: async (wallet) => {

@@ -13,14 +13,14 @@ export function SystemWindow({ children, style }: Props) {
 
 const styles = StyleSheet.create({
   window: {
-    backgroundColor: C.glass,
+    backgroundColor: "rgba(35,19,9,0.92)",
     borderWidth: 1,
     borderColor: C.glassBorder,
-    borderRadius: 8,
+    borderRadius: 18,
     padding: 20,
-    shadowColor: C.mana,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
+    shadowColor: C.ember,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
   },
 });

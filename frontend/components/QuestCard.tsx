@@ -26,7 +26,7 @@ export function QuestCard({
     <SystemWindow style={styles.activeQuestBg}>
       <View style={styles.rowBetween}>
         <View>
-          <Text style={styles.questTag}>[ DAILY QUEST ]</Text>
+          <Text style={styles.questTag}>STREAK QUEST</Text>
           <Text style={styles.questTitle}>{title}</Text>
         </View>
         {isLive ? (
@@ -41,21 +41,22 @@ export function QuestCard({
 
         <View style={styles.opponentInfo}>
           <View style={styles.rowBetween}>
-            <Text style={styles.opponentName}>Opponent: {opponentName}</Text>
+            <Text style={styles.opponentName}>Rival: {opponentName}</Text>
             <Text style={styles.stakeAmount}>{stakeLabel}</Text>
           </View>
           <ProgressBar progress={progress} />
+          <Text style={styles.progressLabel}>{Math.round(progress * 100)}% duel progress</Text>
         </View>
       </View>
 
-      <GateButton label="Enter The Gate" onPress={onEnter} />
+      <GateButton label="Open Duel Board" onPress={onEnter} />
     </SystemWindow>
   );
 }
 
 const styles = StyleSheet.create({
   activeQuestBg: {
-    backgroundColor: "rgba(0,209,255,0.05)",
+    backgroundColor: "rgba(255,138,31,0.08)",
     borderColor: C.manaBorder,
   },
   rowBetween: {
@@ -66,26 +67,26 @@ const styles = StyleSheet.create({
   questTag: {
     fontFamily: "monospace",
     fontSize: 10,
-    color: C.mana,
+    color: C.purple,
     textTransform: "uppercase",
     marginBottom: 4,
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
   questTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "700",
     color: C.white,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   liveBadge: {
-    backgroundColor: C.mana,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 2,
+    backgroundColor: C.success,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   liveBadgeText: {
-    color: C.black,
-    fontSize: 8,
+    color: C.coal,
+    fontSize: 9,
     fontWeight: "700",
     fontFamily: "monospace",
   },
@@ -102,12 +103,18 @@ const styles = StyleSheet.create({
   opponentName: {
     fontSize: 10,
     color: C.slate400,
-    fontStyle: "italic",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   stakeAmount: {
     fontSize: 10,
     color: C.mana,
+  },
+  progressLabel: {
+    fontSize: 10,
+    color: C.slate500,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
 });

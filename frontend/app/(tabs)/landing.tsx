@@ -4,20 +4,36 @@ import { C } from "@/components/lobby-theme";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useEffect } from "react";
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  Vibration,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, Text, Vibration, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const STEPS = [
-  { id: "01", title: "STAKE", sub: "Lock SOL before challenge" },
-  { id: "02", title: "EXECUTE", sub: "Submit daily proof in duel" },
-  { id: "03", title: "SETTLE", sub: "If you break, friend wins stake" },
+const FLOW_STEPS = [
+  {
+    id: "01",
+    title: "Create Duel",
+    copy: "Vinay stakes 1 SOL. The contract moves funds into escrow and the backend marks the duel pending.",
+  },
+  {
+    id: "02",
+    title: "Join Duel",
+    copy: "Rahul matches the stake, escrow reaches 2 SOL, and the duel becomes active with a start time.",
+  },
+  {
+    id: "03",
+    title: "Daily Check-in",
+    copy: "Check-ins stay off-chain for speed. The backend records proof, validates the 24h window, and updates streaks.",
+  },
+  {
+    id: "04",
+    title: "Resolve + Settle",
+    copy: "Two missed windows trigger resolution. The frontend then unlocks settlement so the contract distributes funds.",
+  },
+];
+
+const REWARDS = [
+  "Winner receives 70%",
+  "Loser keeps 25% in vault",
+  "Treasury receives 5%",
 ];
 
 async function feedbackFx(type: "soft" | "hard") {
@@ -46,16 +62,31 @@ export default function LandingPage() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <SystemWindow style={styles.heroWindow}>
-          <Text style={styles.badge}>DISCIPLINE PROTOCOL</Text>
-          <Text style={styles.title}>NO STAKE = NO CONSISTENCY</Text>
+          <View style={styles.heroGlow} />
+          <Text style={styles.badge}>Sol Duel Arena</Text>
+          <Text style={styles.title}>Turn discipline into a live orange-streak game.</Text>
           <Text style={styles.subtitle}>
-            We break habits when nothing is at risk. Here, your SOL is on the
-            line. If you fail your plan, your friend takes the stake.
+            Challenge a friend, lock the stake on-chain, keep the daily loop fast off-chain, and settle only when the winner is clear.
           </Text>
+
+          <View style={styles.heroStats}>
+            <View style={styles.heroStatCard}>
+              <Text style={styles.heroStatValue}>2 SOL</Text>
+              <Text style={styles.heroStatLabel}>escrowed match</Text>
+            </View>
+            <View style={styles.heroStatCard}>
+              <Text style={styles.heroStatValue}>24h</Text>
+              <Text style={styles.heroStatLabel}>check-in window</Text>
+            </View>
+            <View style={styles.heroStatCard}>
+              <Text style={styles.heroStatValue}>2</Text>
+              <Text style={styles.heroStatLabel}>strikes to lose</Text>
+            </View>
+          </View>
 
           <View style={styles.heroActions}>
             <GateButton
-              label="Start Challenge"
+              label="Enter Lobby"
               onPress={() => {
                 void feedbackFx("soft");
                 router.push("/");
@@ -70,58 +101,49 @@ export default function LandingPage() {
               }}
             />
           </View>
-
-          <View style={styles.fxRow}>
-            <Text style={styles.fxDot}>●</Text>
-            <Text style={styles.fxText}>FX: IMPACT + ALERT PULSE ENABLED</Text>
-          </View>
         </SystemWindow>
 
         <SystemWindow>
-          <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
-          <View style={styles.stepGrid}>
-            {STEPS.map((step) => (
+          <Text style={styles.sectionLabel}>Gameplay Loop</Text>
+          <View style={styles.flowList}>
+            {FLOW_STEPS.map((step) => (
               <View key={step.id} style={styles.stepCard}>
-                <Text style={styles.stepId}>{step.id}</Text>
-                <Text style={styles.stepTitle}>{step.title}</Text>
-                <Text style={styles.stepSub}>{step.sub}</Text>
+                <View style={styles.stepBadge}>
+                  <Text style={styles.stepBadgeText}>{step.id}</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepTitle}>{step.title}</Text>
+                  <Text style={styles.stepCopy}>{step.copy}</Text>
+                </View>
               </View>
             ))}
           </View>
         </SystemWindow>
 
-        <SystemWindow>
-          <Text style={styles.sectionLabel}>GAME PREVIEW</Text>
-          <View style={styles.imageGrid}>
-            <View style={styles.imageCard}>
-              <Image
-                source={require("@/assets/images/icon.png")}
-                style={styles.previewImage}
-                resizeMode="cover"
-              />
-              <Text style={styles.imageCaption}>HUNTER TERMINAL</Text>
-            </View>
-
-            <View style={styles.imageCard}>
-              <Image
-                source={require("@/assets/images/splash-icon.png")}
-                style={styles.previewImage}
-                resizeMode="cover"
-              />
-              <Text style={styles.imageCaption}>DUEL GATE</Text>
-            </View>
+        <SystemWindow style={styles.rewardsWindow}>
+          <Text style={styles.sectionLabel}>Settlement Rewards</Text>
+          <Text style={styles.rewardsLead}>
+            The backend decides the winner from streak data, but the contract only allows the approved payout path.
+          </Text>
+          <View style={styles.rewardList}>
+            {REWARDS.map((reward) => (
+              <View key={reward} style={styles.rewardRow}>
+                <View style={styles.rewardDot} />
+                <Text style={styles.rewardText}>{reward}</Text>
+              </View>
+            ))}
           </View>
         </SystemWindow>
 
         <SystemWindow style={styles.warningWindow}>
-          <Text style={styles.sectionLabel}>REAL CONSEQUENCE</Text>
-          <Text style={styles.rule}>• You fail discipline {"->"} you lose stake.</Text>
-          <Text style={styles.rule}>• Your friend wins because they stayed consistent.</Text>
-          <Text style={styles.rule}>• Outcome and payout are backend secured.</Text>
+          <Text style={styles.sectionLabel}>Why This Works</Text>
+          <Text style={styles.rule}>Real escrow creates pressure.</Text>
+          <Text style={styles.rule}>Off-chain check-ins keep the game fast.</Text>
+          <Text style={styles.rule}>On-chain settlement keeps payouts controlled.</Text>
 
-          <View style={{ marginTop: 10 }}>
+          <View style={styles.warningAction}>
             <GateButton
-              label="I UNDERSTAND. ENTER"
+              label="Launch Challenge"
               onPress={() => {
                 void feedbackFx("hard");
                 router.push("/");
@@ -136,117 +158,158 @@ export default function LandingPage() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.bg },
-  scroll: { padding: 16, gap: 12, paddingBottom: 44 },
+  scroll: { padding: 16, gap: 14, paddingBottom: 44 },
   heroWindow: {
+    overflow: "hidden",
     borderColor: C.manaBorder,
-    backgroundColor: "rgba(0,209,255,0.05)",
+    backgroundColor: "rgba(42,20,8,0.96)",
+  },
+  heroGlow: {
+    position: "absolute",
+    right: -32,
+    top: -26,
+    width: 180,
+    height: 180,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,138,31,0.18)",
   },
   badge: {
     fontFamily: "monospace",
     fontSize: 10,
-    color: C.mana,
+    color: C.purple,
     letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   title: {
     color: C.white,
-    fontSize: 24,
-    fontFamily: "monospace",
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 8,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "800",
+    marginBottom: 10,
   },
   subtitle: {
     color: C.slate400,
     fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 14,
+    lineHeight: 21,
+    marginBottom: 18,
+    maxWidth: 560,
+  },
+  heroStats: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 18,
+  },
+  heroStatCard: {
+    flexGrow: 1,
+    minWidth: 92,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+  },
+  heroStatValue: {
+    color: C.white,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  heroStatLabel: {
+    color: C.slate500,
+    fontSize: 11,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
   },
   heroActions: { gap: 10 },
-  fxRow: {
-    marginTop: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  fxDot: {
-    color: C.green,
-    fontSize: 10,
-  },
-  fxText: {
-    color: C.slate500,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1,
-  },
   sectionLabel: {
     fontFamily: "monospace",
     fontSize: 10,
     color: C.mana,
     letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  stepGrid: { gap: 8 },
+  flowList: {
+    gap: 10,
+  },
   stepCard: {
+    flexDirection: "row",
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
     borderColor: C.glassBorder,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.02)",
-    padding: 12,
   },
-  stepId: {
-    color: C.purple,
+  stepBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.mana,
+  },
+  stepBadgeText: {
+    color: C.coal,
+    fontSize: 11,
     fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1,
-    marginBottom: 2,
+    fontWeight: "800",
+  },
+  stepContent: {
+    flex: 1,
+    gap: 4,
   },
   stepTitle: {
     color: C.white,
-    fontFamily: "monospace",
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "700",
-    marginBottom: 4,
   },
-  stepSub: {
+  stepCopy: {
     color: C.slate400,
-    fontSize: 12,
+    fontSize: 13,
+    lineHeight: 19,
   },
-  imageGrid: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  imageCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    borderRadius: 6,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.02)",
-  },
-  previewImage: {
-    width: "100%",
-    height: 120,
-    opacity: 0.85,
-  },
-  imageCaption: {
-    color: C.slate400,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1,
-    textAlign: "center",
-    paddingVertical: 8,
-  },
-  warningWindow: {
+  rewardsWindow: {
     borderColor: C.purpleBorder,
-    backgroundColor: "rgba(153,69,255,0.06)",
+    backgroundColor: "rgba(255,179,71,0.08)",
   },
-  rule: {
+  rewardsLead: {
     color: C.slate400,
     fontSize: 13,
     lineHeight: 20,
+    marginBottom: 12,
+  },
+  rewardList: {
+    gap: 10,
+  },
+  rewardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  rewardDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: C.success,
+  },
+  rewardText: {
+    color: C.white,
+    fontSize: 14,
+  },
+  warningWindow: {
+    borderColor: "rgba(255,107,26,0.34)",
+    backgroundColor: "rgba(255,107,26,0.09)",
+  },
+  rule: {
+    color: C.slate400,
+    fontSize: 14,
+    lineHeight: 21,
     marginBottom: 4,
+  },
+  warningAction: {
+    marginTop: 12,
   },
 });
