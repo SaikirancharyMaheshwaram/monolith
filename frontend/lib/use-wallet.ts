@@ -30,6 +30,7 @@ const D_ARENA_PROGRAM_ID = new PublicKey(
   "EJUzdHnJDy9QEVpWCYcbFoZzXbQWanzKLYJdAYkrqJNM",
 );
 const CREATE_DUEL_DISCRIMINATOR = Buffer.from([49, 28, 93, 11, 75, 242, 69, 165]);
+const JOIN_DUEL_DISCRIMINATOR = Buffer.from([7, 247, 76, 103, 101, 139, 254, 61]);
 const DUEL_SEED = Buffer.from("duel");
 const ESCROW_SEED = Buffer.from("escrow");
 const DUEL_DURATION_SECONDS = 7 * 24 * 60 * 60;
@@ -54,6 +55,18 @@ type CreateOnChainDuelResult = {
   stakeLamports: string;
 };
 
+type JoinOnChainDuelInput = {
+  duelAddress: string;
+  escrowAddress?: string;
+};
+
+type JoinOnChainDuelResult = {
+  signature: string;
+  duelAddress: string;
+  escrowAddress: string;
+  programId: string;
+};
+
 type WalletHook = {
   publicKey: PublicKey | null;
   connected: boolean;
@@ -64,6 +77,7 @@ type WalletHook = {
   getBalance: () => Promise<number>;
   sendSOL: (toAddress: string, amountSOL: number) => Promise<string>;
   createDuel: (input: CreateOnChainDuelInput) => Promise<CreateOnChainDuelResult>;
+  joinDuel: (input: JoinOnChainDuelInput) => Promise<JoinOnChainDuelResult>;
   connection: Connection;
 };
 
@@ -369,6 +383,77 @@ export function useWallet(): WalletHook {
     [authorizeWalletSession, connection, publicKey],
   );
 
+  const joinDuel = useCallback(
+    async ({ duelAddress, escrowAddress }: JoinOnChainDuelInput) => {
+      if (!publicKey) throw new Error("Wallet not connected");
+
+      const duelPublicKey = new PublicKey(duelAddress);
+      const derivedEscrow = PublicKey.findProgramAddressSync(
+        [ESCROW_SEED, duelPublicKey.toBuffer()],
+        D_ARENA_PROGRAM_ID,
+      )[0];
+      const escrowPublicKey = escrowAddress ? new PublicKey(escrowAddress) : derivedEscrow;
+
+      if (!escrowPublicKey.equals(derivedEscrow)) {
+        throw new Error("Escrow address does not match duel PDA");
+      }
+
+      const instruction = new TransactionInstruction({
+        programId: D_ARENA_PROGRAM_ID,
+        keys: [
+          { pubkey: publicKey, isSigner: true, isWritable: true },
+          { pubkey: duelPublicKey, isSigner: false, isWritable: true },
+          { pubkey: escrowPublicKey, isSigner: false, isWritable: true },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        data: JOIN_DUEL_DISCRIMINATOR,
+      });
+
+      setSending(true);
+      try {
+        const transaction = new Transaction().add(instruction);
+        const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.feePayer = publicKey;
+
+        const simulation = await connection.simulateTransaction(transaction);
+        if (simulation.value.err) {
+          console.error("joinDuel simulation logs", simulation.value.logs ?? []);
+          throw new Error(formatSimulationError(simulation.value));
+        }
+
+        const signature = await transact(async (wallet: Web3MobileWallet) => {
+          await authorizeWalletSession(wallet, publicKey.toBase58());
+
+          const signatures = await wallet.signAndSendTransactions({
+            transactions: [transaction],
+          });
+
+          return normalizeSignature(signatures[0]);
+        });
+
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        return {
+          signature,
+          duelAddress: duelPublicKey.toBase58(),
+          escrowAddress: escrowPublicKey.toBase58(),
+          programId: D_ARENA_PROGRAM_ID.toBase58(),
+        };
+      } finally {
+        setSending(false);
+      }
+    },
+    [authorizeWalletSession, connection, publicKey],
+  );
+
   return {
     publicKey,
     connected: !!storedPublicKey,
@@ -379,6 +464,7 @@ export function useWallet(): WalletHook {
     getBalance,
     sendSOL,
     createDuel,
+    joinDuel,
     connection,
   };
 }

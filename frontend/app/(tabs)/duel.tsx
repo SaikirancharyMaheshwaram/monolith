@@ -93,7 +93,12 @@ export default function DuelHubScreen() {
         player1: walletAddress,
         stakeAmount,
         startTime,
-      });
+        onchainDuelAddress: onChainDuel.duelAddress,
+        onchainEscrowAddress: onChainDuel.escrowAddress,
+        onchainProgramId: onChainDuel.programId,
+        onchainTxSignature: onChainDuel.signature,
+        onchainNonce: onChainDuel.duelNonce,
+      } as any);
 
       setShowCreateModal(false);
       Alert.alert(
@@ -132,9 +137,21 @@ export default function DuelHubScreen() {
       Alert.alert("Read Contract", "Please read and confirm the contract first.");
       return;
     }
+    if (!inviteDuel.onchainDuelAddress) {
+      Alert.alert("Join failed", "This duel is missing on-chain metadata. Recreate the invite.");
+      return;
+    }
 
     setJoinInviteLoading(true);
+    let onChainJoin:
+      | Awaited<ReturnType<typeof wallet.joinDuel>>
+      | null = null;
     try {
+      onChainJoin = await wallet.joinDuel({
+        duelAddress: inviteDuel.onchainDuelAddress,
+        escrowAddress: inviteDuel.onchainEscrowAddress,
+      });
+
       await joinFriendDuel({
         duelId: inviteDuel._id,
         player2: user._id,
@@ -142,7 +159,11 @@ export default function DuelHubScreen() {
       setShowContractModal(false);
       Alert.alert("Gate joined", "You have joined this duel.");
     } catch (error: any) {
-      Alert.alert("Join failed", error?.message ?? "Could not join duel");
+      const message =
+        onChainJoin
+          ? `On-chain join succeeded for ${onChainJoin.duelAddress}, but backend activation failed. Tx: ${onChainJoin.signature}`
+          : (error?.message ?? "Could not join duel");
+      Alert.alert("Join failed", message);
     } finally {
       setJoinInviteLoading(false);
     }

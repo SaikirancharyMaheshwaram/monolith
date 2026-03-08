@@ -8,10 +8,24 @@ export const createFriendDuel = mutation({
     player1: v.string(),
     stakeAmount: v.number(),
     startTime: v.number(),
+    onchainDuelAddress: v.optional(v.string()),
+    onchainEscrowAddress: v.optional(v.string()),
+    onchainProgramId: v.optional(v.string()),
+    onchainTxSignature: v.optional(v.string()),
+    onchainNonce: v.optional(v.string()),
   },
 
   handler: async (ctx, args) => {
-    const { player1, stakeAmount, startTime } = args;
+    const {
+      player1,
+      stakeAmount,
+      startTime,
+      onchainDuelAddress,
+      onchainEscrowAddress,
+      onchainProgramId,
+      onchainTxSignature,
+      onchainNonce,
+    } = args;
 
     const now = Date.now();
     const newDate = new Date(startTime);
@@ -62,6 +76,11 @@ export const createFriendDuel = mutation({
       winner: undefined,
 
       nonce: Date.now(),
+      onchainDuelAddress,
+      onchainEscrowAddress,
+      onchainProgramId,
+      onchainTxSignature,
+      onchainNonce,
 
       createdAt: now,
     });

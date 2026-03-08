@@ -60,6 +60,11 @@ export default defineSchema({
     winner: v.optional(v.id("users")),
 
     nonce: v.number(),
+    onchainDuelAddress: v.optional(v.string()),
+    onchainEscrowAddress: v.optional(v.string()),
+    onchainProgramId: v.optional(v.string()),
+    onchainTxSignature: v.optional(v.string()),
+    onchainNonce: v.optional(v.string()),
 
     createdAt: v.number(),
   })
