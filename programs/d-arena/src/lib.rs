@@ -7,7 +7,7 @@ mod state;
 use crate::instructions::*;
 use crate::state::UserResult;
 
-declare_id!("CHaNEYpw943hmsT5hWTv8cbuMGhNBWAaMwbD5hFT9uTp");
+declare_id!("EJUzdHnJDy9QEVpWCYcbFoZzXbQWanzKLYJdAYkrqJNM");
 
 #[program]
 pub mod d_arena {

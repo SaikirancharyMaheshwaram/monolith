@@ -246,7 +246,6 @@ impl<'info> SettleDuel<'info> {
                 self.creator_vault.bump = bumps.creator_vault;
 
                 // Opponent stake -> opponent vault
-
                 transfer_from_escrow(
                     self.system_program.to_account_info().clone(),
                     self.escrow.to_account_info().clone(),

@@ -38,6 +38,7 @@ impl<'info> CancelDuel<'info> {
             clock.unix_timestamp >= duel.start_ts,
             DuelError::CancelTooEarly
         );
+
         let refund = duel.staked_amount;
         require!(refund > 0, DuelError::VaultEmpty);
 

@@ -31,7 +31,7 @@ import { SYSTEM_PROGRAM, UserResult, UserResultByte } from "./helper/constant";
 import { expect } from "chai";
 import fs, { readFileSync } from "fs";
 
-const kpPath = "wallet.json";
+const kpPath = "server.json";
 export const SERVER_KEYPAIR = Keypair.fromSecretKey(
   Uint8Array.from(JSON.parse(readFileSync(kpPath, "utf8")))
 );
@@ -42,7 +42,9 @@ anchor.setProvider(provider);
 const program = anchor.workspace.dArena as Program<DArena>;
 const conn = provider.connection;
 
-const creator = Keypair.generate();
+const creator = anchor.web3.Keypair.fromSecretKey(
+  Uint8Array.from(JSON.parse(fs.readFileSync("creator.json", "utf8")))
+);
 
 const opponent = Keypair.generate();
 
@@ -74,6 +76,7 @@ before(async () => {
   [configPda] = getConfigPda(program);
   [creatorVault] = getVaultPda(program, creator.publicKey);
   [opponentVault] = getVaultPda(program, opponent.publicKey);
+  console.log("Config:", configPda.toBase58());
 
   [programDataAddress] = PublicKey.findProgramAddressSync(
     [program.programId.toBytes()],
@@ -132,6 +135,7 @@ describe("createDuel", () => {
       .rpc({ commitment: "confirmed" });
 
     const config = await program.account.config.fetch(configPda);
+    console.log("config", config);
     expect(config.admin.toBase58()).to.equal(
       provider.wallet.publicKey.toBase58()
     );
@@ -472,7 +476,7 @@ describe("joinDuel", () => {
   });
 });
 
-// ----------------------------- cancelDuel -----------------------------
+// // ----------------------------- cancelDuel -----------------------------
 describe("cancelDuel", () => {
   const stakeAmount = new anchor.BN(0.1 * LAMPORTS_PER_SOL);
 
@@ -671,7 +675,7 @@ describe("cancelDuel", () => {
   });
 });
 
-// ----------------------------- settleDuel -----------------------------
+// // ----------------------------- settleDuel -----------------------------
 describe("settleDuel", () => {
   const stakeAmount = new anchor.BN(0.05 * LAMPORTS_PER_SOL);
 
