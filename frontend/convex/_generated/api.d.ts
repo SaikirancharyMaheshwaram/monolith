@@ -14,6 +14,7 @@ import type * as duels_createFriendDuel from "../duels/createFriendDuel.js";
 import type * as duels_getActiveDuels from "../duels/getActiveDuels.js";
 import type * as duels_getDuelById from "../duels/getDuelById.js";
 import type * as duels_getDuelProgress from "../duels/getDuelProgress.js";
+import type * as duels_getOpenDuels from "../duels/getOpenDuels.js";
 import type * as duels_getScheduledDuels from "../duels/getScheduledDuels.js";
 import type * as duels_getUserByWallet from "../duels/getUserByWallet.js";
 import type * as duels_getUserDuels from "../duels/getUserDuels.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   "duels/getActiveDuels": typeof duels_getActiveDuels;
   "duels/getDuelById": typeof duels_getDuelById;
   "duels/getDuelProgress": typeof duels_getDuelProgress;
+  "duels/getOpenDuels": typeof duels_getOpenDuels;
   "duels/getScheduledDuels": typeof duels_getScheduledDuels;
   "duels/getUserByWallet": typeof duels_getUserByWallet;
   "duels/getUserDuels": typeof duels_getUserDuels;

@@ -79,17 +79,34 @@ export default function DuelHubScreen() {
     if (!walletAddress) return;
 
     setCreateLoading(true);
+    const startTime = Date.now() + startInMins * 60 * 1000;
+    let onChainDuel:
+      | Awaited<ReturnType<typeof wallet.createDuel>>
+      | null = null;
     try {
+      onChainDuel = await wallet.createDuel({
+        stakeAmountSol: stakeAmount,
+        startTimeMs: startTime,
+      });
+
       const duelId = await createFriendDuel({
         player1: walletAddress,
         stakeAmount,
-        startTime: Date.now() + startInMins * 60 * 1000,
+        startTime,
       });
 
       setShowCreateModal(false);
+      Alert.alert(
+        "Duel created",
+        `On-chain duel ${onChainDuel.duelAddress.slice(0, 8)}... confirmed.`,
+      );
       await shareInviteLink(String(duelId));
     } catch (error: any) {
-      Alert.alert("Create failed", error?.message ?? "Could not create duel invite");
+      const message =
+        onChainDuel
+          ? `On-chain duel was created at ${onChainDuel.duelAddress}, but the backend record failed. Tx: ${onChainDuel.signature}`
+          : (error?.message ?? "Could not create duel invite");
+      Alert.alert("Create failed", message);
     } finally {
       setCreateLoading(false);
     }
