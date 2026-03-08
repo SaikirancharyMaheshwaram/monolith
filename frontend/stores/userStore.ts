@@ -24,6 +24,7 @@ type UserState = {
   fetchUser: (wallet: string) => Promise<Doc<"users"> | null>;
   createUser: (input: CreateUserInput) => Promise<void>;
   refreshProfile: () => Promise<void>;
+  reset: () => void;
 };
 
 function patchFromUser(set: (fn: (state: UserState) => Partial<UserState>) => void, user: Doc<"users"> | null) {
@@ -93,5 +94,14 @@ export const useUserStore = create<UserState>((set, get) => ({
     const wallet = get().walletAddress;
     if (!wallet) return;
     await get().fetchUser(wallet);
+  },
+
+  reset: () => {
+    patchFromUser(set, null);
+    set((state) => ({
+      ...state,
+      walletAddress: null,
+      loading: false,
+    }));
   },
 }));

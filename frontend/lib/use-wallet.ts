@@ -21,6 +21,9 @@ import {
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { clearToken } from "./token";
+import { useArenaStore } from "@/stores/arenaStore";
+import { useDuelStore } from "@/stores/duelStore";
+import { useUserStore } from "@/stores/userStore";
 import { useWalletStore } from "@/stores/use-wallet-store";
 
 const APP_IDENTITY = {
@@ -43,6 +46,9 @@ const SETTLE_DUEL_DISCRIMINATOR = Buffer.from([
 ]);
 const INITIALIZE_CONFIG_DISCRIMINATOR = Buffer.from([
   241, 255, 79, 111, 223, 206, 48, 120,
+]);
+const CANCEL_DUEL_DISCRIMINATOR = Buffer.from([
+  83, 124, 224, 237, 235, 44, 38, 57,
 ]);
 const REDEEM_VAULT_DISCRIMINATOR = Buffer.from([
   132, 70, 193, 151, 97, 115, 180, 195,
@@ -85,6 +91,18 @@ type JoinOnChainDuelInput = {
 };
 
 type JoinOnChainDuelResult = {
+  signature: string;
+  duelAddress: string;
+  escrowAddress: string;
+  programId: string;
+};
+
+type CancelOnChainDuelInput = {
+  duelAddress: string;
+  escrowAddress?: string;
+};
+
+type CancelOnChainDuelResult = {
   signature: string;
   duelAddress: string;
   escrowAddress: string;
@@ -144,6 +162,9 @@ type WalletHook = {
     input: CreateOnChainDuelInput,
   ) => Promise<CreateOnChainDuelResult>;
   joinDuel: (input: JoinOnChainDuelInput) => Promise<JoinOnChainDuelResult>;
+  cancelDuel: (
+    input: CancelOnChainDuelInput,
+  ) => Promise<CancelOnChainDuelResult>;
   initializeProgramConfig: (
     input: InitializeProgramConfigInput,
   ) => Promise<InitializeProgramConfigResult>;
@@ -352,6 +373,7 @@ export function useWallet(): WalletHook {
   const setStoredPublicKey = useWalletStore((s) => s.setPublicKey);
 
   const authTokenRef = useRef<string | null>(null);
+  const previousWalletRef = useRef<string | null>(null);
 
   const cluster = isDevnet ? "devnet" : "mainnet-beta";
 
@@ -412,6 +434,16 @@ export function useWallet(): WalletHook {
       useWalletStore.getState().setStatus("onboarding");
     }
   }, [storedPublicKey, user]);
+
+  useEffect(() => {
+    const previousWallet = previousWalletRef.current;
+    if (previousWallet !== storedPublicKey) {
+      useUserStore.getState().reset();
+      useDuelStore.getState().reset();
+      useArenaStore.getState().reset();
+      previousWalletRef.current = storedPublicKey;
+    }
+  }, [storedPublicKey]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -795,6 +827,82 @@ export function useWallet(): WalletHook {
     [authorizeWalletSession, connection, publicKey],
   );
 
+  const cancelDuel = useCallback(
+    async ({ duelAddress, escrowAddress }: CancelOnChainDuelInput) => {
+      if (!publicKey) throw new Error("Wallet not connected");
+
+      const duelPublicKey = new PublicKey(duelAddress);
+      const derivedEscrow = PublicKey.findProgramAddressSync(
+        [ESCROW_SEED, duelPublicKey.toBuffer()],
+        D_ARENA_PROGRAM_ID,
+      )[0];
+      const escrowPublicKey = escrowAddress
+        ? new PublicKey(escrowAddress)
+        : derivedEscrow;
+
+      if (!escrowPublicKey.equals(derivedEscrow)) {
+        throw new Error("Escrow address does not match duel PDA");
+      }
+
+      const instruction = new TransactionInstruction({
+        programId: D_ARENA_PROGRAM_ID,
+        keys: [
+          { pubkey: publicKey, isSigner: true, isWritable: true },
+          { pubkey: duelPublicKey, isSigner: false, isWritable: true },
+          { pubkey: escrowPublicKey, isSigner: false, isWritable: true },
+          {
+            pubkey: SystemProgram.programId,
+            isSigner: false,
+            isWritable: false,
+          },
+        ],
+        data: CANCEL_DUEL_DISCRIMINATOR,
+      });
+
+      setSending(true);
+      try {
+        const transaction = new Transaction().add(instruction);
+        const latestBlockhash =
+          await connection.getLatestBlockhash("confirmed");
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.feePayer = publicKey;
+
+        const simulation = await connection.simulateTransaction(transaction);
+        if (simulation.value.err) {
+          console.error("cancelDuel simulation logs", simulation.value.logs ?? []);
+          throw new Error(formatSimulationError(simulation.value));
+        }
+
+        const signature = await transact(async (wallet: Web3MobileWallet) => {
+          await authorizeWalletSession(wallet, publicKey.toBase58());
+          const signatures = await wallet.signAndSendTransactions({
+            transactions: [transaction],
+          });
+          return normalizeSignature(signatures[0]);
+        });
+
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        return {
+          signature,
+          duelAddress: duelPublicKey.toBase58(),
+          escrowAddress: escrowPublicKey.toBase58(),
+          programId: D_ARENA_PROGRAM_ID.toBase58(),
+        };
+      } finally {
+        setSending(false);
+      }
+    },
+    [authorizeWalletSession, connection, publicKey],
+  );
+
   const initializeProgramConfig = useCallback(
     async ({
       backendPubkey,
@@ -1060,6 +1168,7 @@ export function useWallet(): WalletHook {
     sendSOL,
     createDuel,
     joinDuel,
+    cancelDuel,
     initializeProgramConfig,
     getDuelSettlementContext,
     settleDuel,

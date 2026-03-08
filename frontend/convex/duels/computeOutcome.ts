@@ -103,6 +103,13 @@ export const computeOutcome = mutation({
         : 0;
 
     if (player1 && player2) {
+      await ctx.db.patch(duel.player1, {
+        activeDuelCount: Math.max(0, (player1.activeDuelCount ?? 0) - 1),
+      });
+      await ctx.db.patch(duel.player2, {
+        activeDuelCount: Math.max(0, (player2.activeDuelCount ?? 0) - 1),
+      });
+
       if (outcome === "PLAYER1_WIN") {
         await ctx.db.patch(duel.player1, {
           totalWins: (player1.totalWins ?? 0) + 1,

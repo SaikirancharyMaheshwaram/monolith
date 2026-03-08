@@ -52,6 +52,13 @@ export const finalizeSettlement = mutation({
       status: "RESOLVED",
     });
 
+    await ctx.db.patch(duel.player1, {
+      activeDuelCount: Math.max(0, (player1.activeDuelCount ?? 0) - 1),
+    });
+    await ctx.db.patch(duel.player2, {
+      activeDuelCount: Math.max(0, (player2.activeDuelCount ?? 0) - 1),
+    });
+
     if (winner === duel.player1) {
       await ctx.db.patch(duel.player1, {
         totalWins: (player1.totalWins ?? 0) + 1,

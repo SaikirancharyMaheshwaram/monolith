@@ -26,6 +26,7 @@ type DuelState = {
   submitCompletion: (duelId: Id<"duels">, playerId: Id<"users">) => Promise<void>;
   resolveDuel: (duelId: Id<"duels">) => Promise<void>;
   setSelectedDuelId: (duelId: Id<"duels"> | null) => void;
+  reset: () => void;
 };
 
 export const useDuelStore = create<DuelState>((set, get) => ({
@@ -103,5 +104,16 @@ export const useDuelStore = create<DuelState>((set, get) => ({
 
   setSelectedDuelId: (duelId) => {
     set((state) => ({ ...state, selectedDuelId: duelId }));
+  },
+
+  reset: () => {
+    set((state) => ({
+      ...state,
+      activeDuels: [],
+      duelMap: {},
+      selectedDuelId: null,
+      submissionLoading: false,
+      resolveLoading: false,
+    }));
   },
 }));

@@ -25,6 +25,7 @@ type ArenaState = {
   joinDuel: (duelId: Id<"duels">, player2: Id<"users">) => Promise<void>;
   cancelDuel: (duelId: Id<"duels">, caller: Id<"users">) => Promise<void>;
   setFilters: (filters: Partial<ArenaFilters>) => void;
+  reset: () => void;
 };
 
 export const useArenaStore = create<ArenaState>((set, get) => ({
@@ -92,6 +93,20 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
     set((state) => ({
       ...state,
       filters: { ...state.filters, ...filters },
+    }));
+  },
+
+  reset: () => {
+    set((state) => ({
+      ...state,
+      openDuels: [],
+      createLoading: false,
+      joinLoading: false,
+      filters: {
+        minStake: 0,
+        maxStake: 100,
+        mode: "ALL",
+      },
     }));
   },
 }));
