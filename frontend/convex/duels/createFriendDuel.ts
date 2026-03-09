@@ -55,9 +55,9 @@ export const createFriendDuel = mutation({
       throw new Error("Player not found");
     }
 
-    if (user.activeDuelCount >= 3) {
-      throw new Error("Max duel limit reached");
-    }
+    // if (user.activeDuelCount >= 3) {
+    //   throw new Error("Max duel limit reached");
+    // }
 
     const duelId = await ctx.db.insert("duels", {
       mode: "FRIEND",

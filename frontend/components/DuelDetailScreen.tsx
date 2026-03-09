@@ -15,14 +15,14 @@ import {
 } from "@/lib/duel-view";
 import { useWallet } from "@/lib/use-wallet";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import Animated, {
   Easing,
@@ -112,6 +112,7 @@ const THUMB_SIZE = 60;
 const SLIDE_MAX = SLIDER_WIDTH - THUMB_SIZE - 12;
 
 export function DuelDetailScreen({ duelIdValue }: Props) {
+  const router = useRouter();
   const wallet = useWallet();
   const [submitLoading, setSubmitLoading] = useState(false);
   const [settleLoading, setSettleLoading] = useState(false);
@@ -136,10 +137,6 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
   const mesh = useSharedValue(0);
   const pulse = useSharedValue(0);
   const celebration = useSharedValue(0);
-  const sliderX = useSharedValue(0);
-  const sliderTrack = useSharedValue(0);
-  const sliderText = useSharedValue(0.7);
-  const startOffsetRef = useRef(0);
 
   // Mascot animation shared values
   const myMascotScale = useSharedValue(1);
@@ -228,6 +225,20 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
   }, [progress, user]);
   const myStreak = new Set(myDays).size;
 
+  useEffect(() => {
+    // Deeplink invite handling: If user clicks an invite link but hasn't joined, 
+    // redirect them to the Duel Board where the "Join Duel" modal handles the rest.
+    if (selectedDuel && user) {
+      if (
+        selectedDuel.status === "OPEN" &&
+        selectedDuel.player1 !== user._id &&
+        selectedDuel.player2 !== user._id
+      ) {
+        router.replace(`/(tabs)/duel?duelId=${selectedDuel._id}`);
+      }
+    }
+  }, [selectedDuel, user, router]);
+
   // Rival streak calculation
   const rivalDays = useMemo(() => {
     if (!progress || !user) return [];
@@ -277,18 +288,6 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
   const statusPulseStyle = useAnimatedStyle(() => ({
     opacity: interpolate(pulse.value, [0, 1], [1, 0.7]),
     transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 1.2]) }],
-  }));
-
-  const sliderThumbStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: sliderX.value }],
-  }));
-
-  const sliderTrackStyle = useAnimatedStyle(() => ({
-    width: THUMB_SIZE + sliderTrack.value,
-  }));
-
-  const sliderTextStyle = useAnimatedStyle(() => ({
-    opacity: sliderText.value,
   }));
 
   const celebrationStyle = useAnimatedStyle(() => ({
@@ -473,13 +472,6 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
     message: string,
   ) => setFeedback({ visible: true, tone, title, message });
 
-  const resetSlider = useCallback(() => {
-    sliderX.value = withTiming(0, { duration: 220 });
-    sliderTrack.value = withTiming(0, { duration: 220 });
-    sliderText.value = withTiming(0.7, { duration: 220 });
-    startOffsetRef.current = 0;
-  }, [sliderText, sliderTrack, sliderX]);
-
   const triggerCelebration = (dayNumber: number) => {
     setCelebrationDay(dayNumber);
     celebration.value = 0;
@@ -497,7 +489,6 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
         "Check-in blocked",
         "Only live duels accept daily completion.",
       );
-      resetSlider();
       return;
     }
 
@@ -514,7 +505,6 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
         "Submit failed",
         error?.message ?? "Could not submit completion.",
       );
-      resetSlider();
     } finally {
       setSubmitLoading(false);
     }
@@ -577,49 +567,6 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
       setSettleLoading(false);
     }
   };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: () => isActive && !submitLoading,
-      onPanResponderGrant: () => {
-        startOffsetRef.current = sliderX.value;
-        sliderText.value = withTiming(0.3, { duration: 120 });
-      },
-      onPanResponderMove: (_, gestureState) => {
-        const next = clamp(
-          startOffsetRef.current + gestureState.dx,
-          0,
-          SLIDE_MAX,
-        );
-        sliderX.value = next;
-        sliderTrack.value = next;
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        const next = clamp(
-          startOffsetRef.current + gestureState.dx,
-          0,
-          SLIDE_MAX,
-        );
-        if (next >= SLIDE_MAX * 0.9) {
-          sliderX.value = withTiming(SLIDE_MAX, { duration: 120 });
-          sliderTrack.value = withTiming(SLIDE_MAX, { duration: 120 });
-          sliderText.value = withTiming(0, { duration: 120 });
-          void handleCheckIn();
-        } else {
-          resetSlider();
-        }
-      },
-      onPanResponderTerminate: () => {
-        resetSlider();
-      },
-    }),
-  ).current;
-
-  useEffect(() => {
-    if (!isActive || celebrationDay !== null) {
-      resetSlider();
-    }
-  }, [celebrationDay, isActive, resetSlider]);
 
   if (!wallet.connected) {
     return (
@@ -888,19 +835,17 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
                 </Text>
               </View>
 
-              {/* Slide to Check In */}
-              <View style={styles.sliderContainer}>
-                <Animated.View style={[styles.sliderTrack, sliderTrackStyle]} />
-                <Animated.Text style={[styles.sliderText, sliderTextStyle]}>
-                  {submitLoading ? "Submitting..." : "Slide to Check In"}
-                </Animated.Text>
-                <Animated.View
-                  style={[styles.sliderThumb, sliderThumbStyle]}
-                  {...panResponder.panHandlers}
-                >
-                  <Text style={styles.sliderArrow}>{">"}</Text>
-                </Animated.View>
-              </View>
+              {/* Button check in */}
+              <TouchableOpacity
+                style={[styles.checkInButton, (!isActive || submitLoading) && styles.disabled]}
+                onPress={() => void handleCheckIn()}
+                disabled={!isActive || submitLoading}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.checkInButtonText}>
+                  {submitLoading ? "Submitting..." : "Tap To Check In"}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.distributionCard}>
@@ -1498,53 +1443,26 @@ const styles = StyleSheet.create({
   },
   strikeFillActive: { opacity: 1 },
   strikeNote: { color: "#444", fontSize: 10, marginTop: 8 },
-  sliderContainer: {
-    position: "relative",
+  checkInButton: {
     height: 72,
-    backgroundColor: "rgba(0,214,143,0.08)",
-    borderColor: "rgba(0,214,143,0.25)",
+    backgroundColor: "rgba(0,214,143,0.15)",
+    borderColor: "rgba(0,214,143,0.3)",
     borderWidth: 1,
     borderRadius: 36,
-    overflow: "hidden",
     width: "100%",
     maxWidth: SLIDER_WIDTH,
     alignSelf: "center",
     justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
   },
-  sliderTrack: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,214,143,0.28)",
-  },
-  sliderText: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    textAlign: "center",
+  checkInButtonText: {
     color: C.success,
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "800",
     letterSpacing: 2,
     textTransform: "uppercase",
   },
-  sliderThumb: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
-    borderRadius: THUMB_SIZE / 2,
-    backgroundColor: C.success,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: C.success,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-  },
-  sliderArrow: { color: "#000", fontSize: 24, fontWeight: "900" },
   distributionCard: {
     marginTop: 16,
     padding: 16,

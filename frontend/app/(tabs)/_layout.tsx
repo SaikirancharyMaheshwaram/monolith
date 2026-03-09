@@ -51,6 +51,13 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="duel/[duelId]"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
         name="battle"
         options={{
           title: "Battle",
