@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Strivioz",
-    "slug": "strivioz",
+    "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/splash-icon.png",
@@ -10,7 +10,6 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-
       "bundleIdentifier": "com.strivioz.app"
     },
     "android": {
@@ -54,6 +53,7 @@
       "eas": {
         "projectId": "cb51bb2e-18d9-4bca-b02c-80daaca4e982"
       }
-    }
+    },
+    "owner": "gadaganivinaykumargoud"
   }
 }
