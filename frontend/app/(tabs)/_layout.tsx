@@ -33,7 +33,11 @@ export default function TabLayout() {
         options={{
           title: "Brief",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="chevron.left.forwardslash.chevron.right" color={color} />
+            <IconSymbol
+              size={22}
+              name="chevron.left.forwardslash.chevron.right"
+              color={color}
+            />
           ),
         }}
       />
@@ -69,19 +73,21 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="vault"
+        options={{
+          title: "Vault",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={22} name="shield.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={22} name="person.fill" color={color} />
           ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="explore"
-        options={{
-          href: null,
         }}
       />
     </Tabs>

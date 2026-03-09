@@ -7,8 +7,12 @@ import { SystemWindow } from "@/components/SystemWindow";
 import { CHARACTER_OPTIONS, CharacterId } from "@/components/characters";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
 import { getDuelDescription, getDuelTitle } from "@/lib/duel-copy";
+import {
+  DuelWithParticipants,
+  getParticipantLabel,
+  toDuelId,
+} from "@/lib/duel-view";
 import { useWallet } from "@/lib/use-wallet";
 import { useArenaStore } from "@/stores/arenaStore";
 import { useDuelStore } from "@/stores/duelStore";
@@ -86,17 +90,19 @@ export default function HomeScreen() {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanning, setScanning] = useState(false);
 
-  const inviteDuelId =
-    typeof params.duelId === "string" ? (params.duelId as Id<"duels">) : "";
+  const inviteDuelId = toDuelId(params.duelId);
   const inviteDuel = useQuery(
     api.duels.getDuelById.getDuelById,
     inviteDuelId ? { id: inviteDuelId } : "skip",
-  );
+  ) as DuelWithParticipants | null | undefined;
   const [showInviteModal, setShowInviteModal] = useState(Boolean(inviteDuelId));
 
   const walletAddress = wallet.publicKey?.toBase58() ?? "";
-
   const activeDuel = activeDuels[0] ?? null;
+  const activeDuelView = activeDuel as DuelWithParticipants | null;
+  const openDuelViews = openDuels as DuelWithParticipants[];
+  const invalidInviteLink =
+    typeof params.duelId === "string" && !toDuelId(params.duelId);
   const activeDuelEntry = activeDuel ? duelMap[activeDuel._id] : undefined;
   const duelProgressDays = useMemo(() => {
     if (!activeDuel || !activeDuelEntry?.progress || !user) return 0;
@@ -220,6 +226,7 @@ export default function HomeScreen() {
     await joinDuel(candidate._id, user._id);
     await fetchActiveDuels(user._id);
     setShowArenaModal(false);
+    router.push(`/(tabs)/battle?duelId=${encodeURIComponent(String(candidate._id))}` as any);
   };
 
   const handleJoinInvite = async () => {
@@ -227,6 +234,7 @@ export default function HomeScreen() {
     await joinDuel(inviteDuel._id, user._id);
     await fetchActiveDuels(user._id);
     setShowInviteModal(false);
+    router.push(`/(tabs)/battle?duelId=${encodeURIComponent(String(inviteDuel._id))}` as any);
   };
 
   return (
@@ -281,6 +289,15 @@ export default function HomeScreen() {
           )}
         </SystemWindow>
 
+        {invalidInviteLink ? (
+          <SystemWindow style={styles.quickActionWindow}>
+            <Text style={styles.sectionLabel}>Invite Link</Text>
+            <Text style={styles.feedText}>
+              The duel link is invalid. Open the full shared URL again or paste the exact duel id in the duel board.
+            </Text>
+          </SystemWindow>
+        ) : null}
+
         {isIdleHunter && (
           <TouchableOpacity
             style={styles.idleQuestBox}
@@ -298,12 +315,50 @@ export default function HomeScreen() {
         {hasActiveDuel && activeDuel && (
           <QuestCard
             title={getDuelTitle(activeDuel as any)}
-            opponentName={activeDuel.player2 ? `#${String(activeDuel.player2).slice(0, 6)}` : "Awaiting Hunter"}
+            opponentName={getParticipantLabel(activeDuelView, "player2")}
             stakeLabel={`${activeDuel.stakeAmount} SOL`}
             progress={Math.min(1, duelProgressDays / 7)}
             isLive={activeDuel.status === "ACTIVE"}
-            onEnter={() => router.push("/duel")}
+            onEnter={() =>
+              router.push(
+                `/(tabs)/battle?duelId=${encodeURIComponent(String(activeDuel._id))}` as any,
+              )
+            }
           />
+        )}
+
+        {!isWalletDisconnected && !isNewPlayer && openDuelViews.length > 0 && (
+          <SystemWindow style={styles.feedWindow}>
+            <Text style={styles.sectionLabel}>Open Duel Board</Text>
+            <View style={styles.duelPreviewList}>
+              {openDuelViews.map((duel) => (
+                <TouchableOpacity
+                  key={duel._id}
+                  style={styles.duelPreviewCard}
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    router.push(
+                      `/(tabs)/battle?duelId=${encodeURIComponent(String(duel._id))}` as any,
+                    )
+                  }
+                >
+                  <View style={styles.duelPreviewHeader}>
+                    <Text style={styles.duelPreviewTitle}>{getDuelTitle(duel)}</Text>
+                    <Text style={styles.duelPreviewStatus}>{duel.status}</Text>
+                  </View>
+                  <Text style={styles.duelPreviewCopy}>{getDuelDescription(duel)}</Text>
+                  <View style={styles.duelPreviewMetaRow}>
+                    <Text style={styles.duelPreviewMeta}>{getParticipantLabel(duel, "player1")}</Text>
+                    <Text style={styles.duelPreviewMeta}>{duel.stakeAmount} SOL</Text>
+                  </View>
+                  <View style={styles.duelPreviewMetaRow}>
+                    <Text style={styles.duelPreviewMeta}>{getParticipantLabel(duel, "player2")}</Text>
+                    <Text style={styles.duelPreviewMeta}>View battle detail</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </SystemWindow>
         )}
 
         {!isWalletDisconnected && !isNewPlayer && (
@@ -498,7 +553,7 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Invite Found</Text>
             <Text style={styles.modalLabel}>{getDuelTitle(inviteDuel)}</Text>
             <Text style={styles.modalLabel}>{getDuelDescription(inviteDuel)}</Text>
-            <Text style={styles.modalLabel}>Opponent: #{String(inviteDuel?.player1 ?? "").slice(0, 6)}</Text>
+            <Text style={styles.modalLabel}>Opponent: {getParticipantLabel(inviteDuel, "player1")}</Text>
             <Text style={styles.modalLabel}>Stake: {inviteDuel?.stakeAmount ?? 0} SOL</Text>
             <Text style={styles.modalLabel}>
               Starts: {inviteDuel?.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}
@@ -741,6 +796,53 @@ const styles = StyleSheet.create({
     color: C.slate400,
     fontSize: 13,
     lineHeight: 19,
+  },
+  duelPreviewList: {
+    gap: 10,
+    marginTop: 12,
+  },
+  duelPreviewCard: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    gap: 8,
+  },
+  duelPreviewHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  duelPreviewTitle: {
+    flex: 1,
+    color: C.white,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "800",
+  },
+  duelPreviewStatus: {
+    color: C.mana,
+    fontFamily: "monospace",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  duelPreviewCopy: {
+    color: C.slate400,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  duelPreviewMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  duelPreviewMeta: {
+    color: C.slate500,
+    fontSize: 11,
+    fontFamily: "monospace",
   },
   modalOverlay: {
     flex: 1,

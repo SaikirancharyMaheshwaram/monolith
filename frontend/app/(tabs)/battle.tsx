@@ -3,7 +3,7 @@ import { GateButton } from "@/components/GateButton";
 import { SystemWindow } from "@/components/SystemWindow";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
-import { Doc, Id } from "@/convex/_generated/dataModel";
+import { Id } from "@/convex/_generated/dataModel";
 import {
   formatDuelStatus,
   formatStartTime,
@@ -11,6 +11,11 @@ import {
   getDuelNextAction,
   getDuelTitle,
 } from "@/lib/duel-copy";
+import {
+  DuelWithParticipants,
+  getParticipantLabel,
+  toDuelId,
+} from "@/lib/duel-view";
 import { useWallet } from "@/lib/use-wallet";
 import { useMutation, useQuery } from "convex/react";
 import { useLocalSearchParams } from "expo-router";
@@ -32,11 +37,6 @@ type FeedbackState = {
   message: string;
 };
 
-type DuelWithCopy = Doc<"duels"> & {
-  title?: string;
-  description?: string;
-};
-
 const EMPTY_FEEDBACK: FeedbackState = {
   visible: false,
   tone: "success",
@@ -52,7 +52,7 @@ export default function BattleScreen() {
   const [settleLoading, setSettleLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(EMPTY_FEEDBACK);
   const [selectedDuelId, setSelectedDuelId] = useState<Id<"duels"> | null>(
-    typeof params.duelId === "string" ? (params.duelId as Id<"duels">) : null,
+    toDuelId(params.duelId),
   );
 
   const submitCompletion = useMutation(
@@ -73,17 +73,22 @@ export default function BattleScreen() {
   const duels = useQuery(
     api.duels.getUserDuels.getUserDuels,
     user ? { userId: user._id } : "skip",
-  ) as DuelWithCopy[] | undefined;
+  ) as DuelWithParticipants[] | undefined;
   const selectedDuel = useQuery(
     api.duels.getDuelById.getDuelById,
     selectedDuelId ? { id: selectedDuelId } : "skip",
-  ) as DuelWithCopy | null | undefined;
+  ) as DuelWithParticipants | null | undefined;
 
   useEffect(() => {
-    if (!selectedDuelId && duels?.[0]) {
+    const nextId = toDuelId(params.duelId);
+    setSelectedDuelId(nextId);
+  }, [params.duelId]);
+
+  useEffect(() => {
+    if (!params.duelId && !selectedDuelId && duels?.[0]) {
       setSelectedDuelId(duels[0]._id);
     }
-  }, [duels, selectedDuelId]);
+  }, [duels, params.duelId, selectedDuelId]);
 
   const activeDuels = useMemo(
     () => (duels ?? []).filter((duel) => duel.status === "ACTIVE"),
@@ -108,9 +113,9 @@ export default function BattleScreen() {
   const isActive = duelStatus === "ACTIVE";
   const isResolved = duelStatus === "RESOLVED" || duelStatus === "COMPLETED";
   const hasOnchainMetadata = !!selectedDuel?.onchainDuelAddress;
-  const rivalLabel = selectedDuel?.player2
-    ? `#${String(selectedDuel.player2).slice(0, 6)}`
-    : "Waiting for rival";
+  const rivalLabel = getParticipantLabel(selectedDuel, "player2");
+  const creatorLabel = getParticipantLabel(selectedDuel, "player1");
+  const invalidLinkedDuel = typeof params.duelId === "string" && !toDuelId(params.duelId);
 
   const openFeedback = (
     tone: FeedbackState["tone"],
@@ -239,7 +244,9 @@ export default function BattleScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <SystemWindow style={styles.heroWindow}>
           <View style={styles.heroGlow} />
+          <View style={styles.heroGlowSecondary} />
           <Text style={styles.sectionLabel}>PvP Arena</Text>
+          <Text style={styles.heroKicker}>Battle detail</Text>
           <Text style={styles.heroTitle}>
             {selectedDuel ? getDuelTitle(selectedDuel) : "Choose a duel"}
           </Text>
@@ -263,6 +270,7 @@ export default function BattleScreen() {
                 value={user?.username ? `@${user.username}` : "Hunter"}
               />
               <HeroStat label="Rival" value={rivalLabel} />
+              <HeroStat label="Creator" value={creatorLabel} />
               <HeroStat
                 label="Stake"
                 value={`${selectedDuel.stakeAmount.toFixed(1)} SOL`}
@@ -271,13 +279,18 @@ export default function BattleScreen() {
                 label="Starts"
                 value={formatStartTime(selectedDuel.startTime)}
               />
+              <HeroStat label="Status" value={formatDuelStatus(selectedDuel.status)} />
             </View>
           ) : null}
         </SystemWindow>
 
         <SystemWindow style={styles.focusWindow}>
           <Text style={styles.sectionLabel}>Selected Duel</Text>
-          {selectedDuel ? (
+          {invalidLinkedDuel ? (
+            <Text style={styles.emptyCopy}>
+              The duel link is malformed. Open a full shared link or choose a duel from the lists below.
+            </Text>
+          ) : selectedDuel ? (
             <>
               <Text style={styles.focusTitle}>{getDuelTitle(selectedDuel)}</Text>
               <Text style={styles.focusCopy}>
@@ -298,6 +311,8 @@ export default function BattleScreen() {
                   label="Duel ID"
                   value={String(selectedDuel._id).slice(0, 12)}
                 />
+                <FocusRow label="Creator" value={creatorLabel} />
+                <FocusRow label="Rival" value={rivalLabel} />
               </View>
             </>
           ) : (
@@ -413,7 +428,7 @@ function QueueSection({
 }: {
   title: string;
   copy: string;
-  duels: DuelWithCopy[];
+  duels: DuelWithParticipants[];
   selectedDuelId: Id<"duels"> | null;
   onSelect: (id: Id<"duels">) => void;
 }) {
@@ -444,12 +459,12 @@ function QueueSection({
                   {getDuelDescription(duel)}
                 </Text>
                 <View style={styles.queueMetaRow}>
-                  <Text style={styles.queueMeta}>
-                    {duel.stakeAmount} SOL
-                  </Text>
-                  <Text style={styles.queueMeta}>
-                    {formatStartTime(duel.startTime)}
-                  </Text>
+                  <Text style={styles.queueMeta}>{duel.stakeAmount} SOL</Text>
+                  <Text style={styles.queueMeta}>{getParticipantLabel(duel, "player2")}</Text>
+                </View>
+                <View style={styles.queueMetaRow}>
+                  <Text style={styles.queueMeta}>{getParticipantLabel(duel, "player1")}</Text>
+                  <Text style={styles.queueMeta}>{formatStartTime(duel.startTime)}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -464,7 +479,7 @@ function StatusPill({
   status,
   compact,
 }: {
-  status: DuelWithCopy["status"];
+  status: DuelWithParticipants["status"];
   compact?: boolean;
 }) {
   const toneStyle =
@@ -545,9 +560,26 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(255,107,53,0.22)",
   },
+  heroGlowSecondary: {
+    position: "absolute",
+    left: -26,
+    bottom: -32,
+    width: 150,
+    height: 150,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,183,3,0.12)",
+  },
   focusWindow: {
     borderColor: C.purpleBorder,
     backgroundColor: "rgba(255,183,3,0.08)",
+  },
+  heroKicker: {
+    color: C.slate400,
+    fontSize: 11,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 6,
   },
   resolveWindow: {
     borderColor: C.success,
