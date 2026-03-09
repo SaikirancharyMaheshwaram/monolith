@@ -40,7 +40,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const STAKES = [0.1, 0.5, 1, 2];
 const START_DELAY_OPTIONS = [10, 30, 60];
 const HOW_IT_WORKS =
-  "D-Arena uses blockchain transparency to enforce habit streaks. Two players stake SOL. The winner takes 70%, the loser's 25% is locked in a vault. Treasury takes 5%.";
+  "Strivioz uses blockchain transparency to enforce habit streaks. Two players stake SOL. The winner takes 70%, the loser's 25% is locked in a vault. Treasury takes 5%.";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -369,36 +369,7 @@ export default function HomeScreen() {
           </Animated.View>
         ) : null}
 
-        <SectionTitle title="Choose Your Fighter" />
-        <Animated.View
-          entering={FadeInDown.duration(520).delay(120)}
-          style={styles.characterGrid}
-        >
-          {CHARACTER_OPTIONS.map((character) => {
-            const selected =
-              (user?.selectedCharacter ?? selectedCharacter).toLowerCase() ===
-              character.id.toLowerCase();
-            return (
-              <TouchableOpacity
-                key={character.id}
-                style={[
-                  styles.characterCard,
-                  selected && styles.characterCardSelected,
-                ]}
-                activeOpacity={0.9}
-                onPress={() => !user && setSelectedCharacter(character.id)}
-                disabled={!!user}
-              >
-                <CharacterAvatar
-                  characterId={character.id}
-                  label={character.name}
-                  size={76}
-                />
-                <Text style={styles.characterName}>{character.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </Animated.View>
+      
 
         <SectionTitle title="How It Works" />
         <Animated.View

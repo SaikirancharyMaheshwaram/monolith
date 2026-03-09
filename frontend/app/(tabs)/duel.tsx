@@ -31,6 +31,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather, FontAwesome5 } from "@expo/vector-icons";
 
 const QUICK_STAKES = [0.1, 0.5, 1, 2];
 const DURATION_OPTIONS = [7, 30, 365];
@@ -348,8 +349,17 @@ export default function DuelHubScreen() {
         </Animated.View>
 
         <Animated.View entering={FadeInDown.duration(440).delay(40)} style={styles.buttonGrid}>
-          <ActionButton label="Create" primary onPress={() => setSheetMode("create")} />
-          <ActionButton label="Join" onPress={() => setSheetMode("join")} />
+          <ActionButton 
+            label="Create" 
+            primary 
+            onPress={() => setSheetMode("create")} 
+            icon={<Feather name="plus" size={16} color={C.white} />}
+          />
+          <ActionButton 
+            label="Join" 
+            onPress={() => setSheetMode("join")} 
+            icon={<Feather name="link" size={16} color={C.white} />}
+          />
         </Animated.View>
 
         <SectionTitle title="Ongoing Duels" />
@@ -360,6 +370,7 @@ export default function DuelHubScreen() {
             <Animated.View key={duel._id} entering={FadeInDown.duration(380).delay(60 + index * 35)}>
               <DuelRow
                 duel={duel}
+                currentUserId={user._id}
                 onPress={() =>
                   router.push(`/(tabs)/duel/${encodeURIComponent(String(duel._id))}` as any)
                 }
@@ -382,6 +393,7 @@ export default function DuelHubScreen() {
             <Animated.View key={duel._id} entering={FadeInDown.duration(380).delay(90 + index * 35)}>
               <DuelRow
                 duel={duel}
+                currentUserId={user._id}
                 resolved
                 onPress={() =>
                   router.push(`/(tabs)/duel/${encodeURIComponent(String(duel._id))}` as any)
@@ -590,14 +602,19 @@ function ActionButton({
   label,
   primary,
   onPress,
+  icon,
 }: {
   label: string;
   primary?: boolean;
   onPress: () => void;
+  icon?: React.ReactNode;
 }) {
   return (
     <TouchableOpacity style={[styles.actionButton, primary ? styles.actionButtonPrimary : styles.actionButtonSecondary]} onPress={onPress}>
-      <Text style={[styles.actionButtonText, !primary && styles.actionButtonTextSecondary]}>{label}</Text>
+      <View style={styles.actionButtonContent}>
+        {icon}
+        <Text style={[styles.actionButtonText, !primary && styles.actionButtonTextSecondary]}>{label}</Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -621,10 +638,12 @@ function EmptyCard({ text }: { text: string }) {
 
 function DuelRow({
   duel,
+  currentUserId,
   resolved,
   onPress,
 }: {
   duel: DuelWithParticipants;
+  currentUserId: Id<"users">;
   resolved?: boolean;
   onPress: () => void;
 }) {
@@ -641,8 +660,20 @@ function DuelRow({
   }));
 
   const rowTitle = formatRowTitle(duel);
-  const rowCopy = resolved ? formatResolvedCopy(duel) : formatActiveCopy(duel);
-  const badgeValue = resolved ? formatResolvedTag(duel) : getBadgeValue(duel);
+  
+  const isWinner = duel.winner === currentUserId;
+  const isLoser = Boolean(duel.winner && duel.winner !== currentUserId);
+  
+  let rowCopy = resolved ? formatResolvedCopy(duel) : formatActiveCopy(duel);
+  if (resolved && duel.winner) {
+    if (isWinner) {
+      rowCopy = `Won • +${(duel.stakeAmount * 0.7).toFixed(2)} SOL`;
+    } else {
+      rowCopy = `Lost • -${duel.stakeAmount.toFixed(2)} SOL`;
+    }
+  }
+
+  const badgeValue = resolved ? "" : getBadgeValue(duel);
 
   return (
     <TouchableOpacity style={[styles.duelRow, resolved && styles.duelRowResolved]} onPress={onPress} activeOpacity={0.9}>
@@ -656,12 +687,22 @@ function DuelRow({
         </View>
         <View style={styles.duelMeta}>
           <Text style={styles.duelMetaTitle}>{rowTitle}</Text>
-          <Text style={[styles.duelMetaSub, resolved && styles.duelMetaSubResolved]}>{rowCopy}</Text>
+          <Text style={[
+            styles.duelMetaSub, 
+            resolved && styles.duelMetaSubResolved,
+            resolved && isWinner && { color: C.green },
+            resolved && isLoser && { color: C.red },
+          ]}>{rowCopy}</Text>
         </View>
       </View>
       <View style={[styles.duelBadge, resolved && styles.duelBadgeResolved]}>
-        {!resolved ? <Animated.View style={[styles.fireDot, pulseStyle]} /> : null}
-        <Text style={[styles.duelBadgeText, resolved && styles.duelBadgeTextResolved]}>{badgeValue}</Text>
+        {!resolved ? <FontAwesome5 name="fire" size={13} color={C.orange} style={styles.fireIcon} /> : null}
+        <Text style={[
+          styles.duelBadgeText, 
+          resolved && styles.duelBadgeTextResolved,
+          resolved && isWinner && { color: C.green },
+          resolved && isLoser && { color: C.red },
+        ]}>{badgeValue}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -795,14 +836,17 @@ function formatResolvedCopy(duel: DuelWithParticipants) {
   return "Resolved duel";
 }
 
-function formatResolvedTag(duel: DuelWithParticipants) {
-  if (duel.status === "CANCELLED") return "VOID";
+function formatResolvedTag(duel: DuelWithParticipants, isWinner: boolean, isLoser: boolean) {
+  if (duel.status === "CANCELLED") return "CANCELLED";
+  if (isWinner) return "WON";
+  if (isLoser) return "LOST";
   return duel.winner ? "DONE" : "END";
 }
 
 function getBadgeValue(duel: DuelWithParticipants) {
-  if (duel.status === "OPEN") return `${duel.stakeAmount}`;
-  return String(Math.max(1, Math.ceil(duel.stakeAmount * 10)));
+  if (duel.status === "ACTIVE") return `${duel.stakeAmount}`;
+  // return String(Math.max(1, Math.ceil(duel.stakeAmount * 10)));
+  return null;
 }
 
 function formatTimeUntil(timestamp?: number, prefix = "") {
@@ -874,6 +918,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   actionButtonTextSecondary: { color: C.white },
+  actionButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14, marginTop: 2 },
   sectionLine: {
     width: 20,
@@ -932,8 +981,9 @@ const styles = StyleSheet.create({
     borderWidth: 0,
   },
   fireDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: C.orange },
+  fireIcon: { marginRight: 2 },
   duelBadgeText: { color: C.orange, fontSize: 15, fontWeight: "700" },
-  duelBadgeTextResolved: { color: C.white },
+  duelBadgeTextResolved: { color: C.white, fontFamily: "monospace", fontSize: 16 },
   rowActionWrap: { flexDirection: "row", gap: 10, marginBottom: 14, marginTop: -4 },
   smallAction: {
     flex: 1,

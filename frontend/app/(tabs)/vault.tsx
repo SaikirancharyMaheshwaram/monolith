@@ -14,6 +14,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather, FontAwesome5 } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 const FLOW_STEPS = [
   "Connect wallet and create a challenge with SOL escrow.",
@@ -144,95 +146,64 @@ export default function RedemptionVaultScreen() {
           />
         }
       >
-        <SystemWindow style={styles.heroWindow}>
-          <View style={styles.heroGlow} />
-          <Text style={styles.badge}>Vault Control</Text>
-          <Text style={styles.heroTitle}>
-            Your redemption vault is the safety layer behind lost duels.
-          </Text>
-          <Text style={styles.heroSubtitle}>
-            This page reads the real on-chain vault PDA. If it is unlocked, you
-            can withdraw immediately. If it is locked, the next duel win is
-            what opens recovery access.
-          </Text>
-
-          <View style={styles.heroStats}>
-            <StatCard
-              label="Vault Balance"
-              value={`${(vault?.balanceSol ?? 0).toFixed(4)} SOL`}
-            />
-            <StatCard label="Vault Status" value={status} highlight />
-            <StatCard
-              label="Wallet Balance"
-              value={
-                walletBalance === null
-                  ? "..."
-                  : `${walletBalance.toFixed(4)} SOL`
-              }
-            />
+        {/* Premium Vault Hero */}
+        <View style={styles.vaultHero}>
+          <View style={styles.vault3d}>
+            <View style={styles.vaultCube}>
+              <View style={styles.vaultFace}>
+                <View style={styles.vaultDialPremium} />
+              </View>
+            </View>
+            <View style={styles.vaultLockIcon}>
+              <Feather name="lock" size={24} color={C.white} />
+            </View>
           </View>
-        </SystemWindow>
+        </View>
+
+        <View style={styles.headerCentered}>
+          <Text style={styles.headerTitleText}>Redemption Vault</Text>
+          <Text style={styles.headerSubtitle}>
+            Your locked funds await liberation
+          </Text>
+        </View>
+
+        {/* Premium Vault Amount Card */}
+        <View style={styles.vaultAmountCard}>
+          <View style={styles.vaultStatusBadge}>
+            <Feather name="lock" size={14} color={C.white} />
+            <Text style={styles.vaultStatusBadgeText}>LOCKED FUNDS</Text>
+          </View>
+          <View style={styles.vaultAmountRow}>
+            <Text style={styles.vaultAmountValue}>
+              {(vault?.lockedLamports ? vault.lockedLamports / 1e9 : 0).toFixed(
+                2,
+              )}
+            </Text>
+            <Text style={styles.vaultAmountUnit}>SOL</Text>
+          </View>
+          <Text style={styles.vaultSource}>Locked from past duels</Text>
+          <View style={styles.vaultUnlockHint}>
+            <FontAwesome5
+              name="bolt"
+              size={12}
+              color={C.mana}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.vaultUnlockHintText}>
+              Win any duel to unlock your redemption and claim back your locked
+              SOL.
+            </Text>
+          </View>
+        </View>
 
         <SystemWindow
           style={status === "LOCKED" ? styles.lockedWindow : styles.readyWindow}
         >
-          <Text style={styles.sectionLabel}>Vault State</Text>
-          <View style={styles.statusWrap}>
-            <View
-              style={[
-                styles.statusPill,
-                status === "LOCKED"
-                  ? styles.statusPillLocked
-                  : styles.statusPillReady,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusPillText,
-                  status === "LOCKED"
-                    ? styles.statusPillTextLocked
-                    : styles.statusPillTextReady,
-                ]}
-              >
-              {status}
-            </Text>
-          </View>
-          <Text style={styles.statusCopy}>
-              {status === "LOCKED"
-                ? "Funds are trapped in the redemption vault. Win the next duel to unlock them."
-                : status === "READY"
-                  ? "Vault is unlocked. Redeem now to move funds back to your wallet."
-                  : "No locked recovery funds found in your vault PDA."}
-            </Text>
-          </View>
-
-          <View style={styles.grid}>
-            <InfoCard
-              label="Vault PDA"
-              value={vault?.vaultAddress ?? "Loading..."}
-              mono
-            />
-            <InfoCard
-              label="Vault Owner"
-              value={vault?.owner ?? walletAddress}
-              mono
-            />
-            <InfoCard
-              label="Locked Lamports"
-              value={String(vault?.lockedLamports ?? 0)}
-              mono
-            />
-            <InfoCard
-              label="Account Exists"
-              value={vault?.exists ? "Yes" : "No"}
-            />
-          </View>
-
+          <Text style={styles.sectionLabel}>Vault Action</Text>
           <View style={styles.redeemPanel}>
             <Text style={styles.redeemTitle}>Move Funds Back To Wallet</Text>
             <Text style={styles.redeemCopy}>
-              Redeem calls the real on-chain `redeemVault` instruction. This is
-              not a simulated dashboard action.
+              Redeem calls the real on-chain `redeemVault` instruction.
             </Text>
             <View style={styles.actionStack}>
               <GateButton
@@ -251,51 +222,8 @@ export default function RedemptionVaultScreen() {
             </View>
           </View>
         </SystemWindow>
-
-        <SystemWindow>
-          <Text style={styles.sectionLabel}>Game Flow</Text>
-          <View style={styles.flowList}>
-            {FLOW_STEPS.map((step, index) => (
-              <View key={step} style={styles.flowRow}>
-                <View style={styles.stepBadge}>
-                  <Text style={styles.stepBadgeText}>{index + 1}</Text>
-                </View>
-                <Text style={styles.flowText}>{step}</Text>
-              </View>
-            ))}
-          </View>
-        </SystemWindow>
-
-        <SystemWindow style={styles.metaWindow}>
-          <Text style={styles.sectionLabel}>Hunter Readout</Text>
-          <Row
-            label="Player"
-            value={user ? `@${user.username}` : "Profile missing"}
-          />
-          <Row label="Tier" value={user?.tier ?? "Unsynced"} />
-          <Row label="Wallet" value={walletAddress} mono />
-        </SystemWindow>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <View style={[styles.statCard, highlight && styles.statCardHighlight]}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, highlight && styles.statValueHighlight]}>
-        {value}
-      </Text>
-    </View>
   );
 }
 
@@ -372,70 +300,190 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     textAlign: "center",
   },
-  heroWindow: {
-    overflow: "hidden",
-    borderColor: C.manaBorder,
-    backgroundColor: C.cardAlt,
+  headerCentered: {
+    alignItems: "center",
+    marginBottom: 24,
   },
-  heroGlow: {
-    position: "absolute",
-    right: -34,
-    top: -32,
-    width: 170,
-    height: 170,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,107,53,0.2)",
-  },
-  badge: {
-    fontFamily: "monospace",
-    fontSize: 10,
-    color: C.purple,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    marginBottom: 10,
-  },
-  heroTitle: {
-    color: C.white,
+  headerTitleText: {
+    fontFamily: "monospace" /* Display-like font equivalent available */,
     fontSize: 28,
-    lineHeight: 34,
-    fontWeight: "800",
-    marginBottom: 10,
+    fontWeight: "700",
+    marginBottom: 8,
+    color:
+      C.danger /* Placeholder since text gradients are tricky in plain RN text, could use standard color */,
+    textAlign: "center",
   },
-  heroSubtitle: {
+  headerSubtitle: {
     color: C.slate400,
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 18,
+    fontSize: 13,
+    textAlign: "center",
   },
-  heroStats: {
-    gap: 10,
+  vaultHero: {
+    alignItems: "center",
+    marginVertical: 20,
   },
-  statCard: {
-    borderRadius: 16,
-    padding: 14,
-    backgroundColor: "rgba(255,255,255,0.04)",
+  vault3d: {
+    width: 80,
+    height: 80,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  vaultCube: {
+    width: 60,
+    height: 60,
+    backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 1,
-    borderColor: C.glassBorder,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  statCardHighlight: {
-    backgroundColor: C.manaDim,
-    borderColor: C.manaBorder,
+  vaultFace: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  statLabel: {
-    color: C.slate500,
-    fontSize: 10,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 6,
+  vaultDialPremium: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: C.danger,
+    opacity: 0.8,
   },
-  statValue: {
+  vaultLockIcon: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  vaultAmountCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  vaultStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 16,
+    gap: 6,
+  },
+  vaultStatusBadgeText: {
     color: C.white,
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
   },
-  statValueHighlight: {
+  vaultAmountRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
+    marginBottom: 8,
+  },
+  vaultAmountValue: {
+    color: C.white,
+    fontSize: 48,
+    fontWeight: "800",
+    fontFamily: "monospace",
+  },
+  vaultAmountUnit: {
+    color: C.slate400,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  vaultSource: {
+    color: C.slate500,
+    fontSize: 13,
+    marginBottom: 20,
+  },
+  vaultUnlockHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 107, 53, 0.1)",
+    padding: 12,
+    borderRadius: 12,
+  },
+  vaultUnlockHintText: {
     color: C.mana,
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 18,
+  },
+  vaultStatsGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
+  vaultStatBox: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 14,
+    padding: 16,
+    alignItems: "center",
+  },
+  vaultStatValue: {
+    fontFamily: "monospace",
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  vaultStatLabel: {
+    fontSize: 9,
+    color: "#555",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  historyList: {
+    marginTop: 8,
+  },
+  historyItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.05)",
+  },
+  historyItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  historyIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyTitle: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  historyTime: {
+    color: "#555",
+    fontSize: 10,
+  },
+  historyValue: {
+    color: C.success,
+    fontWeight: "700",
+    fontFamily: "monospace",
   },
   sectionLabel: {
     fontFamily: "monospace",
