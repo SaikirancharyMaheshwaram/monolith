@@ -1,8 +1,8 @@
 # Strivioz Frontend
 
-Strivioz is a mobile-first Solana habit-dueling app built with Expo, Expo Router, Convex, and Solana Web3. Players create stake-backed duels, check in daily, and resolve outcomes through escrow and redemption-vault rules.
+Strivioz is a mobile-first Solana habit-dueling app built with Expo, Expo Router, Convex, and Solana Web3.js. Players create stake-backed duels, check in daily, and resolve outcomes through escrow and redemption-vault rules.
 
-This repository contains the Expo frontend and the colocated Convex backend functions used by the app.
+This package contains the Expo client, local app state, wallet integration, and the Convex schema used by the app.
 
 ## What The App Does
 
@@ -10,189 +10,107 @@ Strivioz turns habit accountability into an on-chain duel:
 
 - Two players lock stake into a duel.
 - Players check in daily during the duel window.
-- The app tracks progress off-chain in Convex and finalizes payout on-chain.
-- The payout model is deterministic:
-  - If one player wins: `70%` goes to the winner, `25%` goes to the loser’s redemption vault, `5%` goes to the platform.
-  - If both win: each player keeps their full amount.
-  - If both lose: funds move to redemption vault logic and must be recovered by winning a future duel.
+- Progress is tracked off-chain and settlement happens on-chain.
+- Losing outcomes can feed a redemption-vault recovery loop.
 
 ## Product Surface
 
 ### Core user flows
 
-- Wallet connect and profile creation
-- Public or friend duel creation
-- Invite link sharing and contract-style invite review
-- Daily duel check-ins
-- On-chain duel settlement
-- Redemption vault recovery and tracking
+- wallet connect and profile creation
+- public or friend duel creation
+- invite link sharing and contract-style invite review
+- daily duel check-ins
+- on-chain duel settlement
+- redemption vault tracking
 
 ### Primary screens
 
-- `app/(tabs)/index.tsx`
-  - Home lobby, stats, primary CTAs, payout rules
-- `app/(tabs)/duel.tsx`
-  - Duel board, create duel sheet, join duel sheet, share/cancel actions
-- `app/(tabs)/duel/[duelId].tsx`
-  - Single duel detail, progress board, check-in, settlement
-- `app/invite/duel/[duelId].tsx`
-  - Invite contract review and join flow
-- `app/(tabs)/profile.tsx`
-  - Hunter profile, combat record, vault standing
-- `app/(tabs)/vault.tsx`
-  - Vault-specific redemption views
+- `app/(tabs)/index.tsx`: home lobby, stats, and primary CTAs
+- `app/(tabs)/duel.tsx`: duel board, create flow, join flow, share and cancel actions
+- `app/(tabs)/duel/[duelId].tsx`: duel detail, progress board, check-in, and settlement
+- `app/invite/duel/[duelId].tsx`: invite review and join flow
+- `app/(tabs)/profile.tsx`: player profile and record
+- `app/(tabs)/vault.tsx`: redemption vault views
+- `app/modal.tsx`: modal route support
 
 ## Stack
 
-### Client
-
 - Expo 54
+- React 19
 - React Native 0.81
 - Expo Router
 - React Native Reanimated
 - Zustand
-- Expo Image
-- Solana Web3.js
-- Solana Mobile Wallet Adapter protocol
-
-### Backend
-
 - Convex
-- Convex queries and mutations colocated in `convex/`
+- Solana Web3.js
+- Solana Mobile Wallet Adapter
+- Expo Secure Store and Async Storage
 
-### Platform integrations
+## Project Structure
 
-- Solana Mobile Wallet Adapter session flow
-- Expo Secure Store / Async Storage persistence
-- Deep links via Expo scheme and web invite routes
+```text
+frontend/
+├── app/
+│   ├── (tabs)/
+│   ├── invite/duel/
+│   ├── _layout.tsx
+│   └── modal.tsx
+├── assets/
+├── components/
+├── constants/
+├── convex/
+├── hooks/
+├── lib/
+├── scripts/
+└── stores/
+```
 
-## Architecture
+### Key folders
 
-### Frontend structure
+- `app/`: file-based routes and screen composition
+- `components/`: reusable UI components and themed shells
+- `lib/`: wallet logic, Convex client setup, storage helpers, and duel utilities
+- `stores/`: Zustand stores for user, duel, arena, and wallet state
+- `convex/`: Convex schema plus generated types
 
-- `app/`
-  - File-based routes and screen composition
-- `components/`
-  - Reusable UI pieces such as avatars, buttons, modals, themed shells
-- `lib/`
-  - Wallet integration, utilities, token helpers, Convex client setup
-- `stores/`
-  - Zustand state for user, duel, arena, and wallet session state
+## Convex Data Model
 
-### Backend structure
+The current schema in `convex/schema.ts` defines:
 
-- `convex/users/`
-  - User creation and wallet-linked profile lookups
-- `convex/duels/`
-  - Duel lifecycle: create, join, cancel, progress, prepare/finalize settlement
-- `convex/submissions/`
-  - Daily check-in persistence
-- `convex/auth/`
-  - Wallet auth and login message verification
-- `convex/utils/`
-  - Time, tier, duel state, and validation helpers
+- `users`
+- `duels`
+- `submissions`
+- `settlements`
+- `authChallenges`
+- `sessions`
 
-## Duel Lifecycle
+This frontend repo currently includes the schema and generated Convex files. If you add queries or mutations later, keep them aligned with this schema.
 
-### 1. Create
-
-The player creates a duel from the duel board:
-
-- Chooses stake
-- Chooses start date and time
-- Chooses end date and time
-- Optionally sets title and description
-
-Validation rules:
-
-- Start time must be in the future
-- End time must be after start time
-- Duration must be greater than 7 days
-- Duration must be less than 365 days
-
-### 2. Join
-
-Friend duels can be joined from:
-
-- the duel board join sheet
-- the invite contract route at `/invite/duel/[duelId]`
-
-On successful join:
-
-- the on-chain join transaction is sent
-- Convex marks the duel as joined
-- the user is redirected to the duel detail page
-
-### 3. Check In
-
-During the live duel window:
-
-- each player can submit one completion per day
-- submissions are recorded in Convex
-- the duel detail screen renders player and rival progress
-
-### 4. Settle
-
-After the duel window closes:
-
-- backend prepares a signed settlement payload
-- the client sends the settle instruction on-chain
-- backend finalizes duel state and records result metadata
-
-## Wallet Model
+## Wallet Integration
 
 Wallet behavior is implemented in `lib/use-wallet.ts`.
 
-Responsibilities:
+It currently handles:
 
-- connect and disconnect
-- MWA authorization / reauthorization
-- send SOL
-- create duel on-chain
-- join duel on-chain
-- cancel duel on-chain
-- initialize program config
-- read settlement context
-- settle duel
-- redeem vault
+- connect and disconnect flows
+- mobile wallet authorization and reauthorization
+- SOL transfer helpers
+- create, join, and cancel duel transactions
+- config initialization
+- settlement reads and settlement submission
+- vault redemption
 
-Related state:
-
-- `stores/use-wallet-store.ts`
-  - network selection
-  - public key persistence
-  - wallet session auth token persistence
+Persistent wallet state lives in `stores/use-wallet-store.ts`.
 
 ## Deep Links
 
-### Invite links
+The Expo app uses the `strivioz` scheme from `app.json`.
 
-Strivioz uses contract-style invite links:
+Invite flows are routed through:
 
-- Web: `https://strivioz.vercel.app/invite/duel/{duelId}`
-- App route: `app/invite/duel/[duelId].tsx`
-
-Invite links should resolve to the contract review page first, not directly to the duel board.
-
-## Project Layout
-
-```text
-app/
-  _layout.tsx
-  (tabs)/
-    _layout.tsx
-    index.tsx
-    duel.tsx
-    duel/[duelId].tsx
-    profile.tsx
-    vault.tsx
-  invite/duel/[duelId].tsx
-
-components/
-lib/
-stores/
-convex/
-```
+- app route: `app/invite/duel/[duelId].tsx`
+- example web path: `/invite/duel/{duelId}`
 
 ## Local Development
 
@@ -200,10 +118,10 @@ convex/
 
 - Node.js
 - npm
-- Expo CLI tooling through `npx expo`
-- Android Studio and/or Xcode if using device builds
-- A configured Convex deployment
-- Solana wallet app available on the target device
+- Expo tooling through `npx expo`
+- Android Studio and/or Xcode for native builds
+- a configured Convex deployment if you are wiring the app to live backend data
+- a Solana wallet app on the target device for wallet-adapter flows
 
 ### Install
 
@@ -211,13 +129,13 @@ convex/
 npm install
 ```
 
-### Start the app
+### Start
 
 ```bash
 npm run start
 ```
 
-### Platform targets
+### Run targets
 
 ```bash
 npm run android
@@ -231,56 +149,19 @@ npm run web
 npm run lint
 ```
 
-## Environment And Runtime Configuration
+## App Configuration
 
-This project expects environment values for Convex and settlement signing.
+Important app-level configuration lives in `app.json`:
 
-Common values used by the app and backend include:
+- app name: `Strivioz`
+- custom scheme: `strivioz`
+- iOS bundle id: `com.strivioz.app`
+- Android package: `com.strivioz.app`
+- Expo Router enabled
+- React Compiler enabled
 
-- `CONVEX_DEPLOYMENT`
-- `EXPO_PUBLIC_CONVEX_URL`
-- `EXPO_PUBLIC_CONVEX_SITE_URL`
-- `JWT_SECRET`
-- `BACKEND_SIGNER_SECRET_KEY`
+## Notes
 
-`BACKEND_SIGNER_SECRET_KEY` is required for settlement signing and on-chain config coordination.
-
-## On-Chain And Settlement Notes
-
-- Duel creation and joining are performed on-chain through the arena program.
-- Daily submissions are stored in Convex.
-- Settlement uses a backend-signed payload and an on-chain settle instruction.
-- Program config must exist on the target cluster before settlement can succeed.
-
-## Design Direction
-
-The app uses a premium, high-contrast visual style:
-
-- dark backgrounds
-- ember/orange as the primary accent
-- green as the success/accomplishment accent
-- animated particles, glows, and floating hero elements
-- strong card hierarchy instead of flat list styling
-
-## Current Operational Notes
-
-- The project contains some existing lint warnings in older files unrelated to new work.
-- Wallet compatibility can vary across providers; Solana Mobile Wallet Adapter session handling is centralized in `lib/use-wallet.ts`.
-- Invite links and duel detail routes are actively used across both mobile and web entry points.
-
-## Scripts
-
-```json
-{
-  "start": "expo start",
-  "reset-project": "node ./scripts/reset-project.js",
-  "android": "expo run:android",
-  "ios": "expo run:ios",
-  "web": "expo start --web",
-  "lint": "expo lint"
-}
-```
-
-## Ownership
-
-This README is intended to describe the app as it exists in this repository today, not a generic Expo starter. Update it whenever duel rules, routes, wallet behavior, or settlement logic change.
+- `npm run reset-project` runs the Expo starter reset script in `scripts/reset-project.js`.
+- `convex/_generated/` contains generated files and should stay in sync with your Convex setup.
+- The frontend depends on the Anchor program defined in the backend workspace for on-chain duel operations.

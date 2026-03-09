@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Strivioz",
-    "slug": "frontend",
+    "slug": "strivioz",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/splash-icon.png",
