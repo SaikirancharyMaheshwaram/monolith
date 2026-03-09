@@ -102,15 +102,11 @@ export default function DuelDetailRoute() {
   }, [float, orbit]);
 
   const orbStyle = useAnimatedStyle(() => ({
-    transform: [
-      { rotate: `${interpolate(orbit.value, [0, 1], [0, 360])}deg` },
-    ],
+    transform: [{ rotate: `${interpolate(orbit.value, [0, 1], [0, 360])}deg` }],
   }));
 
   const mascotStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: interpolate(float.value, [0, 1], [-8, 10]) },
-    ],
+    transform: [{ translateY: interpolate(float.value, [0, 1], [-8, 10]) }],
   }));
 
   const openFeedback = (
@@ -129,7 +125,10 @@ export default function DuelDetailRoute() {
     api.duels.finalizeSettlement.finalizeSettlement,
   );
 
-  const programConfig = useQuery(api.duels.getProgramConfig.getProgramConfig, {});
+  const programConfig = useQuery(
+    api.duels.getProgramConfig.getProgramConfig,
+    {},
+  );
   const duel = useQuery(
     api.duels.getDuelById.getDuelById,
     duelId ? { id: duelId } : "skip",
@@ -152,8 +151,14 @@ export default function DuelDetailRoute() {
   );
   const meIsPlayerOne = !!(duel && user && duel.player1 === user._id);
 
-  const player1Days = useMemo(() => uniqueDays(progress?.p1Days), [progress?.p1Days]);
-  const player2Days = useMemo(() => uniqueDays(progress?.p2Days), [progress?.p2Days]);
+  const player1Days = useMemo(
+    () => uniqueDays(progress?.p1Days),
+    [progress?.p1Days],
+  );
+  const player2Days = useMemo(
+    () => uniqueDays(progress?.p2Days),
+    [progress?.p2Days],
+  );
   const myDays = viewerIsParticipant
     ? meIsPlayerOne
       ? player1Days
@@ -169,7 +174,10 @@ export default function DuelDetailRoute() {
   const currentDay = getCurrentDay(duel, now, totalDays);
   const phase = getDuelPhase(duel, now);
   const visibleWeeks = getVisibleWeeks(totalDays, currentDay, phase);
-  const hiddenWeeks = Math.max(0, Math.ceil(totalDays / 7) - visibleWeeks.length);
+  const hiddenWeeks = Math.max(
+    0,
+    Math.ceil(totalDays / 7) - visibleWeeks.length,
+  );
   const mySubmittedToday = myDays.includes(currentDay);
   const canCheckIn =
     !!duelId &&
@@ -187,11 +195,36 @@ export default function DuelDetailRoute() {
     !!duel.onchainDuelAddress &&
     !duel.resolved;
 
-  const myLabel = getSideLabel(duel, viewerIsParticipant, meIsPlayerOne, "self");
-  const rivalLabel = getSideLabel(duel, viewerIsParticipant, meIsPlayerOne, "rival");
-  const myCharacter = getSideCharacter(duel, viewerIsParticipant, meIsPlayerOne, "self");
-  const rivalCharacter = getSideCharacter(duel, viewerIsParticipant, meIsPlayerOne, "rival");
-  const rivalWallet = getSideWallet(duel, viewerIsParticipant, meIsPlayerOne, "rival");
+  const myLabel = getSideLabel(
+    duel,
+    viewerIsParticipant,
+    meIsPlayerOne,
+    "self",
+  );
+  const rivalLabel = getSideLabel(
+    duel,
+    viewerIsParticipant,
+    meIsPlayerOne,
+    "rival",
+  );
+  const myCharacter = getSideCharacter(
+    duel,
+    viewerIsParticipant,
+    meIsPlayerOne,
+    "self",
+  );
+  const rivalCharacter = getSideCharacter(
+    duel,
+    viewerIsParticipant,
+    meIsPlayerOne,
+    "rival",
+  );
+  const rivalWallet = getSideWallet(
+    duel,
+    viewerIsParticipant,
+    meIsPlayerOne,
+    "rival",
+  );
   const winnerLabel = getWinnerLabel(duel);
 
   const handleCheckIn = async () => {
@@ -248,9 +281,13 @@ export default function DuelDetailRoute() {
     }
 
     setSettleLoading(true);
-    let onChainSettlement: Awaited<ReturnType<typeof wallet.settleDuel>> | null = null;
+    let onChainSettlement: Awaited<
+      ReturnType<typeof wallet.settleDuel>
+    > | null = null;
     try {
-      const context = await wallet.getDuelSettlementContext(duel.onchainDuelAddress);
+      const context = await wallet.getDuelSettlementContext(
+        duel.onchainDuelAddress,
+      );
       const prepared = await prepareSettlement({
         duelId,
         callerWallet: walletAddress,
@@ -290,41 +327,6 @@ export default function DuelDetailRoute() {
     }
   };
 
-  const handleInitializeConfig = async () => {
-    if (!programConfig) {
-      openFeedback("error", "Config unavailable", "Backend signer config is still loading.");
-      return;
-    }
-
-    const trimmedTreasury = treasuryAddress.trim();
-    if (!trimmedTreasury) {
-      openFeedback("error", "Treasury required", "Enter a treasury wallet address.");
-      return;
-    }
-
-    setConfigLoading(true);
-    try {
-      const result = await wallet.initializeProgramConfig({
-        backendPubkey: programConfig.backendPubkey,
-        treasuryAddress: trimmedTreasury,
-        feeBps: programConfig.feeBps,
-      });
-      openFeedback(
-        "success",
-        "Program ready",
-        `Config created at ${shortenWallet(result.configAddress)}.`,
-      );
-    } catch (error: any) {
-      openFeedback(
-        "error",
-        "Initialize failed",
-        error?.message ?? "Could not initialize on-chain config.",
-      );
-    } finally {
-      setConfigLoading(false);
-    }
-  };
-
   if (!duelId) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -341,7 +343,10 @@ export default function DuelDetailRoute() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <HomeBackground orbStyle={orbStyle} />
-        <CenteredState title="Loading duel" copy="Pulling live duel data and streak records." />
+        <CenteredState
+          title="Loading duel"
+          copy="Pulling live duel data and streak records."
+        />
       </SafeAreaView>
     );
   }
@@ -362,15 +367,14 @@ export default function DuelDetailRoute() {
     <SafeAreaView style={styles.safeArea}>
       <HomeBackground orbStyle={orbStyle} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.topBar}>
           <TouchableOpacity
             style={styles.backPill}
             onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
               router.replace("/(tabs)/duel");
             }}
           >
@@ -378,11 +382,16 @@ export default function DuelDetailRoute() {
           </TouchableOpacity>
 
           <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>{getStatusLabel(duel.status, phase)}</Text>
+            <Text style={styles.statusBadgeText}>
+              {getStatusLabel(duel.status, phase)}
+            </Text>
           </View>
         </View>
 
-        <Animated.View entering={FadeInDown.duration(420)} style={styles.heroCard}>
+        <Animated.View
+          entering={FadeInDown.duration(420)}
+          style={styles.heroCard}
+        >
           <View style={styles.heroTop}>
             <View style={styles.heroTitleWrap}>
               <Text style={styles.heroEyebrow}>Duel Arena</Text>
@@ -397,9 +406,15 @@ export default function DuelDetailRoute() {
 
           <View style={styles.mascotShowdown}>
             <Animated.View style={[styles.duelistCard, mascotStyle]}>
-              <CharacterAvatar characterId={myCharacter} label={myLabel} size={76} />
+              <CharacterAvatar
+                characterId={myCharacter}
+                label={myLabel}
+                size={76}
+              />
               <Text style={styles.duelistName}>{myLabel}</Text>
-              <Text style={styles.duelistMeta}>{myDays.length}/{totalDays} days</Text>
+              <Text style={styles.duelistMeta}>
+                {myDays.length}/{totalDays} days
+              </Text>
             </Animated.View>
 
             <View style={styles.heroCenter}>
@@ -416,29 +431,57 @@ export default function DuelDetailRoute() {
             </View>
 
             <Animated.View style={[styles.duelistCard, mascotStyle]}>
-              <CharacterAvatar characterId={rivalCharacter} label={rivalLabel} size={76} />
+              <CharacterAvatar
+                characterId={rivalCharacter}
+                label={rivalLabel}
+                size={76}
+              />
               <Text style={styles.duelistName}>
                 {duel.player2 ? rivalLabel : "Awaiting rival"}
               </Text>
-              <Text style={styles.duelistMeta}>{rivalDays.length}/{totalDays} days</Text>
+              <Text style={styles.duelistMeta}>
+                {rivalDays.length}/{totalDays} days
+              </Text>
             </Animated.View>
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.duration(460).delay(40)} style={styles.actionCard}>
+        <Animated.View
+          entering={FadeInDown.duration(460).delay(40)}
+          style={styles.actionCard}
+        >
           <Text style={styles.sectionTitle}>Action Center</Text>
           <Text style={styles.sectionCopy}>
-            {getActionCopy(duel.status, phase, mySubmittedToday, duel.startTime, duel.endTime, now)}
+            {getActionCopy(
+              duel.status,
+              phase,
+              mySubmittedToday,
+              duel.startTime,
+              duel.endTime,
+              now,
+            )}
           </Text>
 
           <View style={styles.buttonStack}>
             <GateButton
-              label={submitLoading ? "Submitting..." : mySubmittedToday ? "Checked In" : "Check In Today"}
+              label={
+                submitLoading
+                  ? "Submitting..."
+                  : mySubmittedToday
+                    ? "Checked In"
+                    : "Check In Today"
+              }
               onPress={handleCheckIn}
               disabled={!canCheckIn || submitLoading}
             />
             <GateButton
-              label={settleLoading ? "Settling..." : duel.resolved ? "Settled" : "Settle Duel"}
+              label={
+                settleLoading
+                  ? "Settling..."
+                  : duel.resolved
+                    ? "Settled"
+                    : "Settle Duel"
+              }
               onPress={handleSettle}
               variant="ghost"
               disabled={!canSettle || settleLoading}
@@ -446,20 +489,36 @@ export default function DuelDetailRoute() {
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.duration(500).delay(80)} style={styles.infoCard}>
+        <Animated.View
+          entering={FadeInDown.duration(500).delay(80)}
+          style={styles.infoCard}
+        >
           <Text style={styles.sectionTitle}>Contract Snapshot</Text>
           <View style={styles.infoGrid}>
             <InfoTile label="Starts" value={formatDateTime(duel.startTime)} />
             <InfoTile label="Ends" value={formatDateTime(duel.endTime)} />
-            <InfoTile label="Winner" value={winnerLabel ?? (phase === "ended" ? "Ready to settle" : "Pending")} />
-            <InfoTile label="Rival Wallet" value={rivalWallet ? shortenWallet(rivalWallet) : "Not joined"} />
+            <InfoTile
+              label="Winner"
+              value={
+                winnerLabel ??
+                (phase === "ended" ? "Ready to settle" : "Pending")
+              }
+            />
+            <InfoTile
+              label="Rival Wallet"
+              value={rivalWallet ? shortenWallet(rivalWallet) : "Not joined"}
+            />
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.duration(540).delay(120)} style={styles.progressCard}>
+        <Animated.View
+          entering={FadeInDown.duration(540).delay(120)}
+          style={styles.progressCard}
+        >
           <Text style={styles.sectionTitle}>Submission Board</Text>
           <Text style={styles.sectionCopy}>
-            Weekly cards keep longer duels readable. You see the current week, the nearby weeks, and the edges of the contract.
+            Weekly cards keep longer duels readable. You see the current week,
+            the nearby weeks, and the edges of the contract.
           </Text>
 
           {visibleWeeks.map((week) => (
@@ -477,34 +536,10 @@ export default function DuelDetailRoute() {
 
           {hiddenWeeks > 0 ? (
             <Text style={styles.hiddenWeeksText}>
-              {hiddenWeeks} more {hiddenWeeks === 1 ? "week is" : "weeks are"} collapsed between these checkpoints.
+              {hiddenWeeks} more {hiddenWeeks === 1 ? "week is" : "weeks are"}{" "}
+              collapsed between these checkpoints.
             </Text>
           ) : null}
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.duration(580).delay(160)} style={styles.configCard}>
-          <Text style={styles.sectionTitle}>Program Config</Text>
-          <Text style={styles.sectionCopy}>
-            One-time setup before the first on-chain settlement on this network.
-          </Text>
-          <TextInput
-            value={treasuryAddress}
-            onChangeText={setTreasuryAddress}
-            placeholder="Treasury wallet address"
-            placeholderTextColor={C.slate600}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-          />
-          <View style={styles.infoGrid}>
-            <InfoTile label="Backend Signer" value={programConfig?.backendPubkey ?? "Loading..."} />
-            <InfoTile label="Fee" value={programConfig ? `${programConfig.feeBps / 100}%` : "Loading..."} />
-          </View>
-          <GateButton
-            label={configLoading ? "Initializing..." : "Initialize Config"}
-            onPress={handleInitializeConfig}
-            disabled={configLoading || !wallet.connected}
-          />
         </Animated.View>
 
         <Link href="/(tabs)/duel" asChild>
@@ -597,7 +632,10 @@ function ProgressLane({
               style={[
                 styles.dayCell,
                 isOrange ? styles.dayCellOrange : styles.dayCellGreen,
-                state === "done" && (isOrange ? styles.dayCellOrangeDone : styles.dayCellGreenDone),
+                state === "done" &&
+                  (isOrange
+                    ? styles.dayCellOrangeDone
+                    : styles.dayCellGreenDone),
                 state === "today" && styles.dayCellToday,
                 state === "missed" && styles.dayCellMissed,
                 state === "upcoming" && styles.dayCellUpcoming,
@@ -612,7 +650,11 @@ function ProgressLane({
   );
 }
 
-function HomeBackground({ orbStyle }: { orbStyle: ReturnType<typeof useAnimatedStyle> }) {
+function HomeBackground({
+  orbStyle,
+}: {
+  orbStyle: ReturnType<typeof useAnimatedStyle>;
+}) {
   return (
     <>
       <View style={styles.bgHome} />
@@ -699,20 +741,32 @@ function getCurrentDay(
   return Math.min(totalDays, Math.floor((now - duel.startTime) / DAY_MS) + 1);
 }
 
-function getDuelPhase(duel: DuelWithParticipants | null | undefined, now: number): DuelPhase {
+function getDuelPhase(
+  duel: DuelWithParticipants | null | undefined,
+  now: number,
+): DuelPhase {
   if (!duel?.startTime || !duel?.endTime) return "unknown";
   if (now < duel.startTime) return "upcoming";
   if (now >= duel.endTime) return "ended";
   return "live";
 }
 
-function getVisibleWeeks(totalDays: number, currentDay: number, phase: DuelPhase) {
+function getVisibleWeeks(
+  totalDays: number,
+  currentDay: number,
+  phase: DuelPhase,
+) {
   const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
   if (totalWeeks <= 4) {
-    return Array.from({ length: totalWeeks }, (_, index) => buildWeek(index, totalDays));
+    return Array.from({ length: totalWeeks }, (_, index) =>
+      buildWeek(index, totalDays),
+    );
   }
 
-  const currentWeek = Math.min(totalWeeks - 1, Math.max(0, Math.floor((Math.max(1, currentDay) - 1) / 7)));
+  const currentWeek = Math.min(
+    totalWeeks - 1,
+    Math.max(0, Math.floor((Math.max(1, currentDay) - 1) / 7)),
+  );
   const focusWeek = phase === "ended" ? totalWeeks - 1 : currentWeek;
   const chosen = new Set([0, totalWeeks - 1, focusWeek]);
 
@@ -731,7 +785,10 @@ function buildWeek(index: number, totalDays: number): VisibleWeek {
     index,
     startDay,
     endDay,
-    days: Array.from({ length: endDay - startDay + 1 }, (_, dayIndex) => startDay + dayIndex),
+    days: Array.from(
+      { length: endDay - startDay + 1 },
+      (_, dayIndex) => startDay + dayIndex,
+    ),
   };
 }
 
@@ -809,12 +866,18 @@ function getSideCharacter(
 ) {
   if (!duel) return null;
   if (!viewerIsParticipant) {
-    return side === "self" ? duel.player1User?.selectedCharacter : duel.player2User?.selectedCharacter;
+    return side === "self"
+      ? duel.player1User?.selectedCharacter
+      : duel.player2User?.selectedCharacter;
   }
   if (side === "self") {
-    return meIsPlayerOne ? duel.player1User?.selectedCharacter : duel.player2User?.selectedCharacter;
+    return meIsPlayerOne
+      ? duel.player1User?.selectedCharacter
+      : duel.player2User?.selectedCharacter;
   }
-  return meIsPlayerOne ? duel.player2User?.selectedCharacter : duel.player1User?.selectedCharacter;
+  return meIsPlayerOne
+    ? duel.player2User?.selectedCharacter
+    : duel.player1User?.selectedCharacter;
 }
 
 function getSideWallet(
@@ -825,12 +888,18 @@ function getSideWallet(
 ) {
   if (!duel) return null;
   if (!viewerIsParticipant) {
-    return side === "self" ? duel.player1User?.walletAddress : duel.player2User?.walletAddress;
+    return side === "self"
+      ? duel.player1User?.walletAddress
+      : duel.player2User?.walletAddress;
   }
   if (side === "self") {
-    return meIsPlayerOne ? duel.player1User?.walletAddress : duel.player2User?.walletAddress;
+    return meIsPlayerOne
+      ? duel.player1User?.walletAddress
+      : duel.player2User?.walletAddress;
   }
-  return meIsPlayerOne ? duel.player2User?.walletAddress : duel.player1User?.walletAddress;
+  return meIsPlayerOne
+    ? duel.player2User?.walletAddress
+    : duel.player1User?.walletAddress;
 }
 
 function formatDateTime(value?: number) {

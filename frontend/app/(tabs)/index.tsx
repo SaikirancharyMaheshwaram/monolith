@@ -14,6 +14,7 @@ import { useArenaStore } from "@/stores/arenaStore";
 import { useDuelStore } from "@/stores/duelStore";
 import { useUserStore } from "@/stores/userStore";
 import { useQuery } from "convex/react";
+import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -41,6 +42,8 @@ const STAKES = [0.1, 0.5, 1, 2];
 const START_DELAY_OPTIONS = [10, 30, 60];
 const HOW_IT_WORKS =
   "Strivioz uses blockchain transparency to enforce habit streaks. Two players stake SOL. The winner takes 70%, the loser's 25% is locked in a vault. Treasury takes 5%.";
+const APP_LOGO_URI =
+  "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%20100%20100%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22pg1%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23f56565%22/%3E%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23ed8936%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2238%22%20fill%3D%22url(%23pg1)%22/%3E%3Cpath%20d%3D%22M50%2010%20L45%2030%20L55%2030%20Z%22%20fill%3D%22%23fbd38d%22/%3E%3Cpath%20d%3D%22M40%2015%20L42%2032%20L48%2030%20Z%22%20fill%3D%22%23f6ad55%22/%3E%3Cpath%20d%3D%22M60%2015%20L58%2032%20L52%2030%20Z%22%20fill%3D%22%23f6ad55%22/%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2255%22%20r%3D%2220%22%20fill%3D%22%23fef3c7%22/%3E%3Ccircle%20cx%3D%2242%22%20cy%3D%2252%22%20r%3D%223%22%20fill%3D%22%23333%22/%3E%3Ccircle%20cx%3D%2258%22%20cy%3D%2252%22%20r%3D%223%22%20fill%3D%22%23333%22/%3E%3C/svg%3E";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -256,9 +259,6 @@ export default function HomeScreen() {
       >
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
-            <View style={styles.logoIcon}>
-              <View style={styles.logoBolt} />
-            </View>
             <Text style={styles.brandText}>Strivioz</Text>
           </View>
           <ConnectButton
@@ -375,8 +375,6 @@ export default function HomeScreen() {
           </Animated.View>
         ) : null}
 
-      
-
         <SectionTitle title="How It Works" />
         <Animated.View
           entering={FadeInDown.duration(540).delay(160)}
@@ -403,6 +401,48 @@ export default function HomeScreen() {
               <Text style={styles.secondaryButtonText}>Forge Quick Duel</Text>
             </TouchableOpacity>
           ) : null}
+        </Animated.View>
+
+        <SectionTitle title="Payout Rules" />
+        <Animated.View
+          entering={FadeInDown.duration(600).delay(240)}
+          style={styles.rulesCard}
+        >
+          <View style={styles.rulesHeader}>
+            <View style={styles.rulesGlow} />
+            <Text style={styles.rulesTitle}>How The Contract Pays Out</Text>
+            <Text style={styles.rulesCopy}>
+              Outcomes are deterministic, transparent, and enforced the same way for every duel.
+            </Text>
+          </View>
+
+          <View style={styles.rulesStack}>
+            <RuleOutcomeCard
+              title="One Player Wins"
+              accent="orange"
+              lines={[
+                "70% goes to the winner",
+                "25% goes to the loser's redemption vault",
+                "5% goes to the platform",
+              ]}
+            />
+            <RuleOutcomeCard
+              title="Both Players Win"
+              accent="green"
+              lines={[
+                "Each player keeps their full amount",
+                "No vault lock is triggered",
+              ]}
+            />
+            <RuleOutcomeCard
+              title="Both Players Lose"
+              accent="neutral"
+              lines={[
+                "Funds move into each player's redemption vault",
+                "They must win one more duel to recover that amount",
+              ]}
+            />
+          </View>
         </Animated.View>
       </ScrollView>
 
@@ -681,6 +721,35 @@ function SectionTitle({ title }: { title: string }) {
   );
 }
 
+function RuleOutcomeCard({
+  title,
+  lines,
+  accent,
+}: {
+  title: string;
+  lines: string[];
+  accent: "orange" | "green" | "neutral";
+}) {
+  return (
+    <View
+      style={[
+        styles.ruleOutcomeCard,
+        accent === "orange" && styles.ruleOutcomeOrange,
+        accent === "green" && styles.ruleOutcomeGreen,
+        accent === "neutral" && styles.ruleOutcomeNeutral,
+      ]}
+    >
+      <Text style={styles.ruleOutcomeTitle}>{title}</Text>
+      {lines.map((line) => (
+        <View key={line} style={styles.ruleLine}>
+          <View style={styles.ruleBullet} />
+          <Text style={styles.ruleLineText}>{line}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -730,7 +799,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: C.mana,
+    backgroundColor: "rgba(255,107,53,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: C.mana,
@@ -738,11 +809,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 18,
   },
-  logoBolt: {
-    width: 10,
-    height: 18,
-    borderRadius: 5,
-    backgroundColor: "#fff",
+  logoImage: {
+    width: 28,
+    height: 28,
   },
   brandText: {
     color: "#fff",
@@ -1001,6 +1070,84 @@ const styles = StyleSheet.create({
   actionCard: {
     gap: 12,
     marginBottom: 20,
+  },
+  rulesCard: {
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 18,
+    marginBottom: 24,
+  },
+  rulesHeader: {
+    marginBottom: 14,
+  },
+  rulesGlow: {
+    position: "absolute",
+    top: -24,
+    right: -10,
+    width: 110,
+    height: 110,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,107,53,0.12)",
+  },
+  rulesTitle: {
+    color: "#fff",
+    fontSize: 19,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  rulesCopy: {
+    color: "#9b9ba3",
+    fontSize: 13,
+    lineHeight: 20,
+    maxWidth: 300,
+  },
+  rulesStack: {
+    gap: 12,
+  },
+  ruleOutcomeCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 10,
+  },
+  ruleOutcomeOrange: {
+    backgroundColor: "rgba(255,107,53,0.08)",
+    borderColor: "rgba(255,107,53,0.14)",
+  },
+  ruleOutcomeGreen: {
+    backgroundColor: "rgba(0,214,143,0.08)",
+    borderColor: "rgba(0,214,143,0.14)",
+  },
+  ruleOutcomeNeutral: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  ruleOutcomeTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  ruleLine: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  ruleBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: C.mana,
+    marginTop: 6,
+  },
+  ruleLineText: {
+    flex: 1,
+    color: "#d1d1d8",
+    fontSize: 13,
+    lineHeight: 19,
   },
   primaryButton: {
     backgroundColor: C.mana,

@@ -49,7 +49,9 @@ export default function ProfileScreen() {
 
   const totalMatches = user.totalWins + user.totalLosses;
   const winRate =
-    totalMatches > 0 ? `${Math.round((user.totalWins / totalMatches) * 100)}%` : "0%";
+    totalMatches > 0
+      ? `${Math.round((user.totalWins / totalMatches) * 100)}%`
+      : "0%";
   const level = String(Math.floor(user.xp / 100) + 1).padStart(2, "0");
 
   return (
@@ -68,7 +70,9 @@ export default function ProfileScreen() {
               <Text style={styles.badge}>Hunter Profile</Text>
               <Text style={styles.name}>{user.username}</Text>
               <Text style={styles.tier}>{user.tier}</Text>
-              <Text style={styles.wallet}>{shortAddress(user.walletAddress)}</Text>
+              <Text style={styles.wallet}>
+                {shortAddress(user.walletAddress)}
+              </Text>
             </View>
 
             <View style={styles.levelCard}>
@@ -80,7 +84,10 @@ export default function ProfileScreen() {
           <View style={styles.heroStats}>
             <HeroStat label="XP" value={String(user.xp)} />
             <HeroStat label="Win Rate" value={winRate} />
-            <HeroStat label="Active Duels" value={String(user.activeDuelCount)} />
+            <HeroStat
+              label="Active Duels"
+              value={String(user.activeDuelCount)}
+            />
             <HeroStat
               label="Vault"
               value={`${user.redemptionVaultBalance.toFixed(2)} SOL`}
@@ -93,17 +100,15 @@ export default function ProfileScreen() {
           <View style={styles.recordGrid}>
             <RecordCard label="Total Wins" value={String(user.totalWins)} />
             <RecordCard label="Total Losses" value={String(user.totalLosses)} />
-            <RecordCard label="Public Wins" value={String(user.publicWins)} />
-            <RecordCard label="Public Losses" value={String(user.publicLosses)} />
           </View>
         </SystemWindow>
 
         <SystemWindow>
           <Text style={styles.sectionLabel}>Identity</Text>
-          <StatRow label="Wallet Address" value={user.walletAddress} mono />
+          <StatRow label="Wallet Address" value={user.walletAddress+" "} mono />
           <StatRow
             label="Selected Character"
-            value={user.selectedCharacter.toUpperCase()}
+            value={user.selectedCharacter.toUpperCase()+" "}
           />
           <StatRow
             label="Unlocked Characters"
@@ -169,7 +174,9 @@ function StatRow({
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, mono && styles.rowValueMono]}>{value}</Text>
+      <Text style={[styles.rowValue, mono && styles.rowValueMono]}>
+        {value}
+      </Text>
     </View>
   );
 }

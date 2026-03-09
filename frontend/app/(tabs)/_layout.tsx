@@ -28,8 +28,6 @@ export default function TabLayout() {
         },
       }}
     >
-    
-
       <Tabs.Screen
         name="index"
         options={{
@@ -45,7 +43,7 @@ export default function TabLayout() {
         options={{
           title: "Duels",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="shield.lefthalf.filled" color={color} />
+            <IconSymbol size={22} name="bolt.fill" color={color} />
           ),
         }}
       />
@@ -54,16 +52,6 @@ export default function TabLayout() {
         name="duel/[duelId]"
         options={{
           href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="battle"
-        options={{
-          title: "Battle",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="bolt.fill" color={color} />
-          ),
         }}
       />
 

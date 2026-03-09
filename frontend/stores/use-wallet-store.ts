@@ -15,6 +15,8 @@ interface WalletState {
 
   publicKey: string | null;
   setPublicKey: (key: string | null) => void;
+  authToken: string | null;
+  setAuthToken: (token: string | null) => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -28,6 +30,8 @@ export const useWalletStore = create<WalletState>()(
       setStatus: (s) => set({ status: s }),
       publicKey: null,
       setPublicKey: (key) => set({ publicKey: key }),
+      authToken: null,
+      setAuthToken: (token) => set({ authToken: token }),
     }),
 
     {
@@ -41,10 +45,13 @@ export const useWalletStore = create<WalletState>()(
 
         const nextPublicKey =
           typeof state.publicKey === "string" ? state.publicKey : null;
+        const nextAuthToken =
+          typeof state.authToken === "string" ? state.authToken : null;
 
         return {
           ...state,
           publicKey: nextPublicKey,
+          authToken: nextAuthToken,
         } as WalletState;
       },
     },
