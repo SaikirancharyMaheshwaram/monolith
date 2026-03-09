@@ -2,6 +2,8 @@ import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 
 const DEFAULT_DUEL_DURATION = 7 * 24 * 60 * 60 * 1000;
+const MIN_DUEL_DURATION = 7 * 24 * 60 * 60 * 1000;
+const MAX_DUEL_DURATION = 365 * 24 * 60 * 60 * 1000;
 
 export const createFriendDuel = mutation({
   args: {
@@ -41,6 +43,12 @@ export const createFriendDuel = mutation({
     }
     if (finalEndTime <= startTime) {
       throw new Error("End time must be after start time");
+    }
+    if (finalEndTime - startTime <= MIN_DUEL_DURATION) {
+      throw new Error("Duel duration must be greater than 7 days");
+    }
+    if (finalEndTime - startTime >= MAX_DUEL_DURATION) {
+      throw new Error("Duel duration must be less than 365 days");
     }
 
     // const user = await ctx.db.get(player1);

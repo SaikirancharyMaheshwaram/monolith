@@ -163,8 +163,14 @@ export default function HomeScreen() {
   ]);
 
   useEffect(() => {
+    if (inviteDuelId) {
+      router.replace(
+        `/invite/duel/${encodeURIComponent(String(inviteDuelId))}` as any,
+      );
+      return;
+    }
     setShowInviteModal(Boolean(inviteDuelId));
-  }, [inviteDuelId]);
+  }, [inviteDuelId, router]);
 
   const isNewPlayer = wallet.connected && !userLoading && !user;
   const hasActiveDuel = wallet.connected && !!user && !!activeDuel;

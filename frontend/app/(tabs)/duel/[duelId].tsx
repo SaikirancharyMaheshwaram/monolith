@@ -2,7 +2,6 @@ import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { FeedbackModal } from "@/components/FeedbackModal";
 import { GateButton } from "@/components/GateButton";
 import { C } from "@/components/lobby-theme";
-import { SystemWindow } from "@/components/SystemWindow";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { getDuelDescription, getDuelTitle } from "@/lib/duel-copy";
@@ -24,6 +23,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  FadeInDown,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type DuelProgress = {
@@ -33,13 +42,20 @@ type DuelProgress = {
   p2Days: number[];
 };
 
-type DayState = "done" | "missed" | "today" | "upcoming";
 type DuelPhase = "unknown" | "upcoming" | "live" | "ended";
+type DayState = "done" | "missed" | "today" | "upcoming";
 type FeedbackState = {
   visible: boolean;
   tone: "success" | "error";
   title: string;
   message: string;
+};
+
+type VisibleWeek = {
+  index: number;
+  startDay: number;
+  endDay: number;
+  days: number[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,17 +65,6 @@ const EMPTY_FEEDBACK: FeedbackState = {
   tone: "success",
   title: "",
   message: "",
-};
-const MASCOT_TAUNTS: Record<string, string> = {
-  lion: "ROAR",
-  tiger: "CLAW",
-  wolf: "HOWL",
-  fox: "DASH",
-  dragon: "BLAZE",
-  phoenix: "RISE",
-  snake: "HISS",
-  hawk: "SWOOP",
-  bear: "CRUSH",
 };
 
 export default function DuelDetailRoute() {
@@ -75,10 +80,38 @@ export default function DuelDetailRoute() {
   const [configLoading, setConfigLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(EMPTY_FEEDBACK);
 
+  const orbit = useSharedValue(0);
+  const float = useSharedValue(0);
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), REFRESH_MS);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    orbit.value = withRepeat(
+      withTiming(1, { duration: 28000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    float.value = withRepeat(
+      withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+  }, [float, orbit]);
+
+  const orbStyle = useAnimatedStyle(() => ({
+    transform: [
+      { rotate: `${interpolate(orbit.value, [0, 1], [0, 360])}deg` },
+    ],
+  }));
+
+  const mascotStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(float.value, [0, 1], [-8, 10]) },
+    ],
+  }));
 
   const openFeedback = (
     tone: FeedbackState["tone"],
@@ -96,11 +129,8 @@ export default function DuelDetailRoute() {
     api.duels.finalizeSettlement.finalizeSettlement,
   );
 
-  const programConfig = useQuery(
-    api.duels.getProgramConfig.getProgramConfig,
-    {},
-  );
-  const selectedDuel = useQuery(
+  const programConfig = useQuery(api.duels.getProgramConfig.getProgramConfig, {});
+  const duel = useQuery(
     api.duels.getDuelById.getDuelById,
     duelId ? { id: duelId } : "skip",
   ) as DuelWithParticipants | null | undefined;
@@ -116,25 +146,14 @@ export default function DuelDetailRoute() {
   );
 
   const viewerIsParticipant = !!(
-    selectedDuel &&
+    duel &&
     user &&
-    (selectedDuel.player1 === user._id || selectedDuel.player2 === user._id)
+    (duel.player1 === user._id || duel.player2 === user._id)
   );
-  const meIsPlayerOne = !!(
-    selectedDuel &&
-    user &&
-    selectedDuel.player1 === user._id
-  );
+  const meIsPlayerOne = !!(duel && user && duel.player1 === user._id);
 
-  const player1Days = useMemo(
-    () => uniqueDays(progress?.p1Days),
-    [progress?.p1Days],
-  );
-  const player2Days = useMemo(
-    () => uniqueDays(progress?.p2Days),
-    [progress?.p2Days],
-  );
-
+  const player1Days = useMemo(() => uniqueDays(progress?.p1Days), [progress?.p1Days]);
+  const player2Days = useMemo(() => uniqueDays(progress?.p2Days), [progress?.p2Days]);
   const myDays = viewerIsParticipant
     ? meIsPlayerOne
       ? player1Days
@@ -146,75 +165,41 @@ export default function DuelDetailRoute() {
       : player1Days
     : player2Days;
 
-  const totalDays = getTotalDays(selectedDuel);
-  const currentDay = getCurrentDay(selectedDuel, now, totalDays);
-  const duelPhase = getDuelPhase(selectedDuel, now);
-  const timelineDays = buildRelevantDays(totalDays, currentDay);
-  const title = getDuelTitle(selectedDuel);
-  const description = getDuelDescription(selectedDuel);
-  const myLabel = getSideLabel(
-    selectedDuel,
-    viewerIsParticipant,
-    meIsPlayerOne,
-    "self",
-  );
-  const rivalLabel = getSideLabel(
-    selectedDuel,
-    viewerIsParticipant,
-    meIsPlayerOne,
-    "rival",
-  );
-  const myCharacter = getSideCharacter(
-    selectedDuel,
-    viewerIsParticipant,
-    meIsPlayerOne,
-    "self",
-  );
-  const rivalCharacter = getSideCharacter(
-    selectedDuel,
-    viewerIsParticipant,
-    meIsPlayerOne,
-    "rival",
-  );
-  const myTodayState = getDayState(currentDay, myDays, currentDay, duelPhase);
-  const mySubmittedToday = myTodayState === "done";
-  const winnerLabel = getWinnerLabel(selectedDuel);
-  const rivalWallet = getSideWallet(
-    selectedDuel,
-    viewerIsParticipant,
-    meIsPlayerOne,
-    "rival",
-  );
-  const startText = formatDateTime(selectedDuel?.startTime);
-  const endText = formatDateTime(selectedDuel?.endTime);
-  const duelStatusLabel = getStatusLabel(selectedDuel?.status, duelPhase);
-  const duelTaunt =
-    MASCOT_TAUNTS[(myCharacter ?? "default").toLowerCase()] ?? "LOCK IN";
-  const rivalTaunt =
-    MASCOT_TAUNTS[(rivalCharacter ?? "default").toLowerCase()] ?? "BRING IT";
-
+  const totalDays = getTotalDays(duel);
+  const currentDay = getCurrentDay(duel, now, totalDays);
+  const phase = getDuelPhase(duel, now);
+  const visibleWeeks = getVisibleWeeks(totalDays, currentDay, phase);
+  const hiddenWeeks = Math.max(0, Math.ceil(totalDays / 7) - visibleWeeks.length);
+  const mySubmittedToday = myDays.includes(currentDay);
   const canCheckIn =
     !!duelId &&
     !!user &&
     viewerIsParticipant &&
-    selectedDuel?.status === "ACTIVE" &&
-    duelPhase === "live" &&
+    duel?.status === "ACTIVE" &&
+    phase === "live" &&
     !mySubmittedToday;
   const canSettle =
     !!duelId &&
-    !!selectedDuel &&
+    !!duel &&
     viewerIsParticipant &&
-    selectedDuel.status === "ACTIVE" &&
-    duelPhase === "ended" &&
-    !!selectedDuel.onchainDuelAddress &&
-    !selectedDuel.resolved;
+    duel.status === "ACTIVE" &&
+    phase === "ended" &&
+    !!duel.onchainDuelAddress &&
+    !duel.resolved;
+
+  const myLabel = getSideLabel(duel, viewerIsParticipant, meIsPlayerOne, "self");
+  const rivalLabel = getSideLabel(duel, viewerIsParticipant, meIsPlayerOne, "rival");
+  const myCharacter = getSideCharacter(duel, viewerIsParticipant, meIsPlayerOne, "self");
+  const rivalCharacter = getSideCharacter(duel, viewerIsParticipant, meIsPlayerOne, "rival");
+  const rivalWallet = getSideWallet(duel, viewerIsParticipant, meIsPlayerOne, "rival");
+  const winnerLabel = getWinnerLabel(duel);
 
   const handleCheckIn = async () => {
     if (!duelId || !user) {
       openFeedback(
         "error",
         "Check-in blocked",
-        "Connect the wallet that joined this duel to submit a check-in.",
+        "Connect the participant wallet before submitting today.",
       );
       return;
     }
@@ -229,8 +214,8 @@ export default function DuelDetailRoute() {
         "success",
         "Check-in locked",
         result.message
-          ? `${result.message}. Day ${result.dayNumber} is already safe.`
-          : `Day ${result.dayNumber} is protected. Keep the streak alive.`,
+          ? `${result.message}. Day ${result.dayNumber} is already secured.`
+          : `Day ${result.dayNumber} has been secured.`,
       );
     } catch (error: any) {
       openFeedback(
@@ -244,33 +229,28 @@ export default function DuelDetailRoute() {
   };
 
   const handleSettle = async () => {
-    if (!selectedDuel || !duelId || !walletAddress) {
+    if (!duel || !duelId || !walletAddress) {
       openFeedback(
         "error",
-        "Settle failed",
-        "Connect a participant wallet before settling this duel.",
+        "Settlement blocked",
+        "Connect a participant wallet before settling.",
       );
       return;
     }
 
-    if (!selectedDuel.onchainDuelAddress) {
+    if (!duel.onchainDuelAddress) {
       openFeedback(
         "error",
-        "Missing on-chain duel",
-        "This duel is missing on-chain metadata.",
+        "Missing on-chain metadata",
+        "This duel cannot be settled because its on-chain address is missing.",
       );
       return;
     }
 
     setSettleLoading(true);
-    let onChainSettlement: Awaited<
-      ReturnType<typeof wallet.settleDuel>
-    > | null = null;
-
+    let onChainSettlement: Awaited<ReturnType<typeof wallet.settleDuel>> | null = null;
     try {
-      const context = await wallet.getDuelSettlementContext(
-        selectedDuel.onchainDuelAddress,
-      );
+      const context = await wallet.getDuelSettlementContext(duel.onchainDuelAddress);
       const prepared = await prepareSettlement({
         duelId,
         callerWallet: walletAddress,
@@ -279,7 +259,7 @@ export default function DuelDetailRoute() {
       });
 
       onChainSettlement = await wallet.settleDuel({
-        duelAddress: selectedDuel.onchainDuelAddress,
+        duelAddress: duel.onchainDuelAddress,
         resultByte: prepared.resultByte,
         message: prepared.message,
         signature: prepared.signature,
@@ -294,7 +274,7 @@ export default function DuelDetailRoute() {
         "success",
         "Settlement complete",
         prepared.winnerWallet
-          ? `${shortenWallet(prepared.winnerWallet)} takes the win.`
+          ? `${shortenWallet(prepared.winnerWallet)} takes the duel.`
           : formatOutcome(prepared.outcome),
       );
     } catch (error: any) {
@@ -302,7 +282,7 @@ export default function DuelDetailRoute() {
         "error",
         "Settlement failed",
         onChainSettlement
-          ? `On-chain settlement succeeded but backend finalization failed. Tx: ${onChainSettlement.signature}`
+          ? `On-chain settlement succeeded, but backend finalization failed. Tx: ${onChainSettlement.signature}`
           : (error?.message ?? "Could not settle duel."),
       );
     } finally {
@@ -312,21 +292,13 @@ export default function DuelDetailRoute() {
 
   const handleInitializeConfig = async () => {
     if (!programConfig) {
-      openFeedback(
-        "error",
-        "Config unavailable",
-        "Backend signer config is still loading.",
-      );
+      openFeedback("error", "Config unavailable", "Backend signer config is still loading.");
       return;
     }
 
     const trimmedTreasury = treasuryAddress.trim();
     if (!trimmedTreasury) {
-      openFeedback(
-        "error",
-        "Treasury required",
-        "Enter a treasury wallet address before initializing.",
-      );
+      openFeedback("error", "Treasury required", "Enter a treasury wallet address.");
       return;
     }
 
@@ -340,7 +312,7 @@ export default function DuelDetailRoute() {
       openFeedback(
         "success",
         "Program ready",
-        `Config PDA created at ${shortenWallet(result.configAddress)}.`,
+        `Config created at ${shortenWallet(result.configAddress)}.`,
       );
     } catch (error: any) {
       openFeedback(
@@ -356,62 +328,41 @@ export default function DuelDetailRoute() {
   if (!duelId) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.stateWrap}>
-          <Text style={styles.stateTitle}>Malformed duel link</Text>
-          <Text style={styles.stateCopy}>
-            This duel id is invalid. Open the detail screen again from the duel
-            board.
-          </Text>
-          <Link href="/(tabs)/duel" asChild>
-            <TouchableOpacity style={styles.backPill}>
-              <Text style={styles.backPillText}>Back To Duels</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
+        <HomeBackground orbStyle={orbStyle} />
+        <CenteredState
+          title="Malformed duel link"
+          copy="This duel id is invalid. Open the duel again from the arena."
+        />
       </SafeAreaView>
     );
   }
 
-  if (selectedDuel === undefined) {
+  if (duel === undefined) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.stateWrap}>
-          <Text style={styles.stateTitle}>Loading duel</Text>
-          <Text style={styles.stateCopy}>
-            Pulling the arena board, streaks, and payout status.
-          </Text>
-        </View>
+        <HomeBackground orbStyle={orbStyle} />
+        <CenteredState title="Loading duel" copy="Pulling live duel data and streak records." />
       </SafeAreaView>
     );
   }
 
-  if (!selectedDuel) {
+  if (!duel) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.stateWrap}>
-          <Text style={styles.stateTitle}>Duel missing</Text>
-          <Text style={styles.stateCopy}>
-            This duel no longer exists or the link is stale.
-          </Text>
-          <Link href="/(tabs)/duel" asChild>
-            <TouchableOpacity style={styles.backPill}>
-              <Text style={styles.backPillText}>Back To Duels</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
+        <HomeBackground orbStyle={orbStyle} />
+        <CenteredState
+          title="Duel not found"
+          copy="This duel no longer exists or the shared link is stale."
+        />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.bgGlowLarge} />
-      <View style={styles.bgGlowSmall} />
+      <HomeBackground orbStyle={orbStyle} />
 
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
           <TouchableOpacity
             style={styles.backPill}
@@ -426,197 +377,141 @@ export default function DuelDetailRoute() {
             <Text style={styles.backPillText}>Back</Text>
           </TouchableOpacity>
 
-          <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>{duelStatusLabel}</Text>
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>{getStatusLabel(duel.status, phase)}</Text>
           </View>
         </View>
 
-        <SystemWindow style={styles.heroCard}>
-          <View style={styles.heroHeadingRow}>
-            <View style={styles.heroTextBlock}>
+        <Animated.View entering={FadeInDown.duration(420)} style={styles.heroCard}>
+          <View style={styles.heroTop}>
+            <View style={styles.heroTitleWrap}>
               <Text style={styles.heroEyebrow}>Duel Arena</Text>
-              <Text style={styles.heroTitle}>{title}</Text>
-              <Text style={styles.heroCopy}>{description}</Text>
+              <Text style={styles.heroTitle}>{getDuelTitle(duel)}</Text>
+              <Text style={styles.heroCopy}>{getDuelDescription(duel)}</Text>
             </View>
-            <View style={styles.potBadge}>
-              <Text style={styles.potLabel}>Pot</Text>
-              <Text style={styles.potValue}>
-                {selectedDuel.stakeAmount} SOL
-              </Text>
+            <View style={styles.heroPot}>
+              <Text style={styles.heroPotLabel}>Stake</Text>
+              <Text style={styles.heroPotValue}>{duel.stakeAmount} SOL</Text>
             </View>
           </View>
 
-          <View style={styles.duelistRow}>
-            <MascotCard
-              sideLabel={viewerIsParticipant ? "You" : "Challenger"}
-              name={myLabel}
-              taunt={duelTaunt}
-              characterId={myCharacter}
-              score={myDays.length}
-              totalDays={totalDays}
-              accent="mana"
-            />
-            <View style={styles.versusWrap}>
-              <View style={styles.versusRing}>
-                <Text style={styles.versusText}>VS</Text>
+          <View style={styles.mascotShowdown}>
+            <Animated.View style={[styles.duelistCard, mascotStyle]}>
+              <CharacterAvatar characterId={myCharacter} label={myLabel} size={76} />
+              <Text style={styles.duelistName}>{myLabel}</Text>
+              <Text style={styles.duelistMeta}>{myDays.length}/{totalDays} days</Text>
+            </Animated.View>
+
+            <View style={styles.heroCenter}>
+              <View style={styles.heroRing}>
+                <Text style={styles.heroRingText}>VS</Text>
               </View>
-              <Text style={styles.versusSub}>
-                {duelPhase === "upcoming"
-                  ? "Warm up"
-                  : duelPhase === "ended"
-                    ? "Final whistle"
-                    : `Day ${currentDay}`}
+              <Text style={styles.heroCenterCopy}>
+                {phase === "upcoming"
+                  ? `Starts ${formatRelativeTime(duel.startTime, now)}`
+                  : phase === "ended"
+                    ? "Settlement window open"
+                    : `Day ${currentDay} live`}
               </Text>
             </View>
-            <MascotCard
-              sideLabel={selectedDuel.player2 ? "Rival" : "Open Slot"}
-              name={selectedDuel.player2 ? rivalLabel : "Awaiting rival"}
-              taunt={rivalTaunt}
-              characterId={rivalCharacter}
-              score={rivalDays.length}
-              totalDays={totalDays}
-              accent="green"
-            />
-          </View>
 
-          <View style={styles.heroStats}>
-            <StatPill label="Starts" value={startText} />
-            <StatPill label="Ends" value={endText} />
-            <StatPill
-              label="Winner"
-              value={
-                winnerLabel ??
-                (duelPhase === "ended" ? "Ready to settle" : "Pending")
-              }
-            />
-            <StatPill
-              label="Rival Wallet"
-              value={rivalWallet ? shortenWallet(rivalWallet) : "Not joined"}
-            />
-          </View>
-        </SystemWindow>
-
-        <SystemWindow style={styles.boardCard}>
-          <View style={styles.boardHeader}>
-            <View>
-              <Text style={styles.boardTitle}>Streak Path</Text>
-              <Text style={styles.boardCopy}>
-                Duolingo-style tiles, but built for head-to-head grind. Orange
-                is your lane, green is your rival.
+            <Animated.View style={[styles.duelistCard, mascotStyle]}>
+              <CharacterAvatar characterId={rivalCharacter} label={rivalLabel} size={76} />
+              <Text style={styles.duelistName}>
+                {duel.player2 ? rivalLabel : "Awaiting rival"}
               </Text>
-            </View>
-            <View style={styles.dayCounter}>
-              <Text style={styles.dayCounterLabel}>Current</Text>
-              <Text style={styles.dayCounterValue}>
-                {duelPhase === "upcoming" ? "Soon" : `Day ${currentDay}`}
-              </Text>
-            </View>
+              <Text style={styles.duelistMeta}>{rivalDays.length}/{totalDays} days</Text>
+            </Animated.View>
           </View>
+        </Animated.View>
 
-          <View style={styles.laneHeader}>
-            <View style={styles.laneLabelBlock}>
-              <View style={[styles.laneDot, styles.myDot]} />
-              <Text style={styles.laneLabel}>
-                {viewerIsParticipant ? "You" : "Player 1"}
-              </Text>
-            </View>
-            <View style={styles.laneLabelBlock}>
-              <View style={[styles.laneDot, styles.rivalDot]} />
-              <Text style={styles.laneLabel}>
-                {selectedDuel.player2 ? "Rival" : "Slot"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.pathBoard}>
-            {timelineDays.map((day, index) => (
-              <View
-                key={day}
-                style={[
-                  styles.pathRow,
-                  index % 2 === 1 && styles.pathRowOffset,
-                ]}
-              >
-                <TileColumn
-                  day={day}
-                  accent="mana"
-                  state={getDayState(day, myDays, currentDay, duelPhase)}
-                />
-                <View style={styles.pathConnector}>
-                  <View style={styles.pathConnectorLine} />
-                  <Text style={styles.pathDayText}>DAY {day}</Text>
-                </View>
-                <TileColumn
-                  day={day}
-                  accent="green"
-                  state={getDayState(day, rivalDays, currentDay, duelPhase)}
-                />
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.tileLegend}>
-            <LegendChip label="Done" state="done" />
-            <LegendChip label="Today" state="today" />
-            <LegendChip label="Missed" state="missed" />
-            <LegendChip label="Queued" state="upcoming" />
-          </View>
-        </SystemWindow>
-
-        <SystemWindow style={styles.actionDeck}>
-          <Text style={styles.boardTitle}>Action Center</Text>
-          <Text style={styles.boardCopy}>
-            {getActionCopy(selectedDuel.status, duelPhase, mySubmittedToday)}
+        <Animated.View entering={FadeInDown.duration(460).delay(40)} style={styles.actionCard}>
+          <Text style={styles.sectionTitle}>Action Center</Text>
+          <Text style={styles.sectionCopy}>
+            {getActionCopy(duel.status, phase, mySubmittedToday, duel.startTime, duel.endTime, now)}
           </Text>
 
-          <View style={styles.actionGrid}>
-            <View style={styles.actionModule}>
-              <Text style={styles.actionModuleTitle}>Check-In</Text>
-              <Text style={styles.actionModuleBody}>
-                {mySubmittedToday
-                  ? "You already cleared today."
-                  : duelPhase === "upcoming"
-                    ? `Opens ${formatRelativeTime(selectedDuel.startTime, now)}.`
-                    : duelPhase === "ended"
-                      ? "The play window is closed."
-                      : "Submit today before the window rolls over."}
-              </Text>
-              <GateButton
-                label={
-                  submitLoading
-                    ? "Submitting..."
-                    : mySubmittedToday
-                      ? "Checked In"
-                      : "Lock Today"
-                }
-                onPress={handleCheckIn}
-                disabled={!canCheckIn || submitLoading}
-              />
-            </View>
-
-            <View style={styles.actionModule}>
-              <Text style={styles.actionModuleTitle}>Settlement</Text>
-              <Text style={styles.actionModuleBody}>
-                {selectedDuel.resolved
-                  ? "Payout state is already finalized."
-                  : duelPhase === "ended"
-                    ? "The duel can now be settled on-chain."
-                    : `Unlocks ${formatRelativeTime(selectedDuel.endTime, now)}.`}
-              </Text>
-              <GateButton
-                label={
-                  settleLoading
-                    ? "Settling..."
-                    : selectedDuel.resolved
-                      ? "Settled"
-                      : "Finalize Duel"
-                }
-                onPress={handleSettle}
-                disabled={!canSettle || settleLoading}
-              />
-            </View>
+          <View style={styles.buttonStack}>
+            <GateButton
+              label={submitLoading ? "Submitting..." : mySubmittedToday ? "Checked In" : "Check In Today"}
+              onPress={handleCheckIn}
+              disabled={!canCheckIn || submitLoading}
+            />
+            <GateButton
+              label={settleLoading ? "Settling..." : duel.resolved ? "Settled" : "Settle Duel"}
+              onPress={handleSettle}
+              variant="ghost"
+              disabled={!canSettle || settleLoading}
+            />
           </View>
-        </SystemWindow>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(500).delay(80)} style={styles.infoCard}>
+          <Text style={styles.sectionTitle}>Contract Snapshot</Text>
+          <View style={styles.infoGrid}>
+            <InfoTile label="Starts" value={formatDateTime(duel.startTime)} />
+            <InfoTile label="Ends" value={formatDateTime(duel.endTime)} />
+            <InfoTile label="Winner" value={winnerLabel ?? (phase === "ended" ? "Ready to settle" : "Pending")} />
+            <InfoTile label="Rival Wallet" value={rivalWallet ? shortenWallet(rivalWallet) : "Not joined"} />
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(540).delay(120)} style={styles.progressCard}>
+          <Text style={styles.sectionTitle}>Submission Board</Text>
+          <Text style={styles.sectionCopy}>
+            Weekly cards keep longer duels readable. You see the current week, the nearby weeks, and the edges of the contract.
+          </Text>
+
+          {visibleWeeks.map((week) => (
+            <WeekCard
+              key={week.index}
+              week={week}
+              myDays={myDays}
+              rivalDays={rivalDays}
+              currentDay={currentDay}
+              phase={phase}
+              isParticipant={viewerIsParticipant}
+              rivalJoined={!!duel.player2}
+            />
+          ))}
+
+          {hiddenWeeks > 0 ? (
+            <Text style={styles.hiddenWeeksText}>
+              {hiddenWeeks} more {hiddenWeeks === 1 ? "week is" : "weeks are"} collapsed between these checkpoints.
+            </Text>
+          ) : null}
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(580).delay(160)} style={styles.configCard}>
+          <Text style={styles.sectionTitle}>Program Config</Text>
+          <Text style={styles.sectionCopy}>
+            One-time setup before the first on-chain settlement on this network.
+          </Text>
+          <TextInput
+            value={treasuryAddress}
+            onChangeText={setTreasuryAddress}
+            placeholder="Treasury wallet address"
+            placeholderTextColor={C.slate600}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+          <View style={styles.infoGrid}>
+            <InfoTile label="Backend Signer" value={programConfig?.backendPubkey ?? "Loading..."} />
+            <InfoTile label="Fee" value={programConfig ? `${programConfig.feeBps / 100}%` : "Loading..."} />
+          </View>
+          <GateButton
+            label={configLoading ? "Initializing..." : "Initialize Config"}
+            onPress={handleInitializeConfig}
+            disabled={configLoading || !wallet.connected}
+          />
+        </Animated.View>
+
+        <Link href="/(tabs)/duel" asChild>
+          <TouchableOpacity style={styles.bottomBackLink}>
+            <Text style={styles.bottomBackText}>Back to duel board</Text>
+          </TouchableOpacity>
+        </Link>
       </ScrollView>
 
       <FeedbackModal
@@ -630,104 +525,157 @@ export default function DuelDetailRoute() {
   );
 }
 
-function MascotCard({
-  sideLabel,
-  name,
-  taunt,
-  characterId,
-  score,
-  totalDays,
-  accent,
+function WeekCard({
+  week,
+  myDays,
+  rivalDays,
+  currentDay,
+  phase,
+  isParticipant,
+  rivalJoined,
 }: {
-  sideLabel: string;
-  name: string;
-  taunt: string;
-  characterId?: string | null;
-  score: number;
-  totalDays: number;
-  accent: "mana" | "green";
+  week: VisibleWeek;
+  myDays: number[];
+  rivalDays: number[];
+  currentDay: number;
+  phase: DuelPhase;
+  isParticipant: boolean;
+  rivalJoined: boolean;
 }) {
-  const tone = accent === "mana" ? styles.mascotCardMe : styles.mascotCardRival;
-  const badgeTone =
-    accent === "mana" ? styles.mascotSpeechMe : styles.mascotSpeechRival;
-
   return (
-    <View style={[styles.mascotCard, tone]}>
-      <Text style={styles.mascotSideLabel}>{sideLabel}</Text>
-      <View style={styles.mascotAvatarWrap}>
-        <CharacterAvatar characterId={characterId} label={name} size={72} />
-        <View style={[styles.mascotSpeech, badgeTone]}>
-          <Text style={styles.mascotSpeechText}>{taunt}</Text>
-        </View>
-      </View>
-      <Text numberOfLines={1} style={styles.mascotName}>
-        {name}
+    <View style={styles.weekCard}>
+      <Text style={styles.weekTitle}>
+        Week {week.index + 1} • Days {week.startDay}-{week.endDay}
       </Text>
-      <View style={styles.fireScore}>
-        <Text style={styles.fireIcon}>🔥</Text>
-        <Text style={styles.fireScoreText}>
-          {score}/{totalDays}
-        </Text>
-      </View>
+
+      <ProgressLane
+        label={isParticipant ? "You" : "Player 1"}
+        accent="mana"
+        days={week.days}
+        submissions={myDays}
+        currentDay={currentDay}
+        phase={phase}
+      />
+
+      <ProgressLane
+        label={rivalJoined ? "Rival" : "Open Slot"}
+        accent="green"
+        days={week.days}
+        submissions={rivalDays}
+        currentDay={currentDay}
+        phase={phase}
+      />
     </View>
   );
 }
 
-function StatPill({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.statPill}>
-      <Text style={styles.statPillLabel}>{label}</Text>
-      <Text numberOfLines={2} style={styles.statPillValue}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function TileColumn({
-  day,
+function ProgressLane({
+  label,
   accent,
-  state,
+  days,
+  submissions,
+  currentDay,
+  phase,
 }: {
-  day: number;
+  label: string;
   accent: "mana" | "green";
-  state: DayState;
+  days: number[];
+  submissions: number[];
+  currentDay: number;
+  phase: DuelPhase;
 }) {
   const isOrange = accent === "mana";
   return (
-    <View style={styles.tileColumn}>
-      <View
-        style={[
-          styles.streakTile,
-          isOrange ? tileTone.orangeBase : tileTone.greenBase,
-          state === "done" &&
-            (isOrange ? tileTone.orangeDone : tileTone.greenDone),
-          state === "today" &&
-            (isOrange ? tileTone.orangeToday : tileTone.greenToday),
-          state === "missed" && tileTone.missed,
-          state === "upcoming" && tileTone.upcoming,
-        ]}
-      >
-        <Text style={styles.streakTileEmoji}>
-          {state === "done"
-            ? "✓"
-            : state === "today"
-              ? "!"
-              : state === "missed"
-                ? "×"
-                : "•"}
-        </Text>
+    <View style={styles.laneRow}>
+      <Text style={styles.laneTitle}>{label}</Text>
+      <View style={styles.dayGrid}>
+        {days.map((day) => {
+          const state = getDayState(day, submissions, currentDay, phase);
+          return (
+            <View
+              key={day}
+              style={[
+                styles.dayCell,
+                isOrange ? styles.dayCellOrange : styles.dayCellGreen,
+                state === "done" && (isOrange ? styles.dayCellOrangeDone : styles.dayCellGreenDone),
+                state === "today" && styles.dayCellToday,
+                state === "missed" && styles.dayCellMissed,
+                state === "upcoming" && styles.dayCellUpcoming,
+              ]}
+            >
+              <Text style={styles.dayCellText}>{day}</Text>
+            </View>
+          );
+        })}
       </View>
-      <Text style={styles.tileDayMini}>{day}</Text>
     </View>
   );
 }
 
-function LegendChip({ label, state }: { label: string; state: DayState }) {
+function HomeBackground({ orbStyle }: { orbStyle: ReturnType<typeof useAnimatedStyle> }) {
   return (
-    <View style={styles.legendChip}>
-      <View style={[styles.legendSwatch, legendMap[state]]} />
-      <Text style={styles.legendText}>{label}</Text>
+    <>
+      <View style={styles.bgHome} />
+      <Animated.View style={[styles.bgHomeOrb, orbStyle]} />
+      <View style={styles.particleLayer}>
+        {Array.from({ length: 7 }).map((_, index) => (
+          <FloatingParticle key={index} index={index} />
+        ))}
+      </View>
+    </>
+  );
+}
+
+function FloatingParticle({ index }: { index: number }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withDelay(
+      index * 260,
+      withRepeat(
+        withTiming(1, { duration: 14000 + index * 500, easing: Easing.linear }),
+        -1,
+        false,
+      ),
+    );
+  }, [index, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.1, 0.9, 1], [0, 0.35, 0.35, 0]),
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [720, -80]) },
+      { scale: interpolate(progress.value, [0, 1], [0, 1]) },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.particle,
+        style,
+        {
+          left: `${10 + index * 12}%`,
+          backgroundColor: index % 2 === 0 ? C.mana : C.success,
+        },
+      ]}
+    />
+  );
+}
+
+function CenteredState({ title, copy }: { title: string; copy: string }) {
+  return (
+    <View style={styles.stateWrap}>
+      <Text style={styles.stateTitle}>{title}</Text>
+      <Text style={styles.stateCopy}>{copy}</Text>
+    </View>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoTile}>
+      <Text style={styles.infoTileLabel}>{label}</Text>
+      <Text style={styles.infoTileValue}>{value}</Text>
     </View>
   );
 }
@@ -751,23 +699,40 @@ function getCurrentDay(
   return Math.min(totalDays, Math.floor((now - duel.startTime) / DAY_MS) + 1);
 }
 
-function getDuelPhase(
-  duel: DuelWithParticipants | null | undefined,
-  now: number,
-): DuelPhase {
+function getDuelPhase(duel: DuelWithParticipants | null | undefined, now: number): DuelPhase {
   if (!duel?.startTime || !duel?.endTime) return "unknown";
   if (now < duel.startTime) return "upcoming";
   if (now >= duel.endTime) return "ended";
   return "live";
 }
 
-function buildRelevantDays(totalDays: number, currentDay: number) {
-  if (totalDays <= 12) {
-    return Array.from({ length: totalDays }, (_, index) => index + 1);
+function getVisibleWeeks(totalDays: number, currentDay: number, phase: DuelPhase) {
+  const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
+  if (totalWeeks <= 4) {
+    return Array.from({ length: totalWeeks }, (_, index) => buildWeek(index, totalDays));
   }
-  const start = Math.max(1, currentDay - 3);
-  const end = Math.min(totalDays, start + 9);
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+
+  const currentWeek = Math.min(totalWeeks - 1, Math.max(0, Math.floor((Math.max(1, currentDay) - 1) / 7)));
+  const focusWeek = phase === "ended" ? totalWeeks - 1 : currentWeek;
+  const chosen = new Set([0, totalWeeks - 1, focusWeek]);
+
+  if (focusWeek > 0) chosen.add(focusWeek - 1);
+  if (focusWeek < totalWeeks - 1) chosen.add(focusWeek + 1);
+
+  return Array.from(chosen)
+    .sort((a, b) => a - b)
+    .map((index) => buildWeek(index, totalDays));
+}
+
+function buildWeek(index: number, totalDays: number): VisibleWeek {
+  const startDay = index * 7 + 1;
+  const endDay = Math.min(totalDays, startDay + 6);
+  return {
+    index,
+    startDay,
+    endDay,
+    days: Array.from({ length: endDay - startDay + 1 }, (_, dayIndex) => startDay + dayIndex),
+  };
 }
 
 function getDayState(
@@ -787,8 +752,30 @@ function getStatusLabel(status?: string, phase?: DuelPhase) {
   if (status === "CANCELLED") return "Cancelled";
   if (phase === "upcoming") return "Upcoming";
   if (phase === "ended") return "Awaiting Settlement";
-  if (status === "OPEN") return "Open";
   return "Live";
+}
+
+function getActionCopy(
+  status: string,
+  phase: DuelPhase,
+  mySubmittedToday: boolean,
+  startTime?: number,
+  endTime?: number,
+  now = Date.now(),
+) {
+  if (status === "RESOLVED" || status === "COMPLETED") {
+    return "This duel is already finalized. Review the board and payout record.";
+  }
+  if (phase === "upcoming") {
+    return `The duel starts ${formatRelativeTime(startTime, now)}. Your first check-in opens then.`;
+  }
+  if (phase === "ended") {
+    return `The duel ended ${formatRelativeTime(endTime, now)}. Settlement is the next step.`;
+  }
+  if (mySubmittedToday) {
+    return "Today is already locked. The next check-in opens after rollover.";
+  }
+  return "Submit today near the top of the screen so you do not miss the live window.";
 }
 
 function getWinnerLabel(duel?: DuelWithParticipants | null) {
@@ -822,18 +809,12 @@ function getSideCharacter(
 ) {
   if (!duel) return null;
   if (!viewerIsParticipant) {
-    return side === "self"
-      ? duel.player1User?.selectedCharacter
-      : duel.player2User?.selectedCharacter;
+    return side === "self" ? duel.player1User?.selectedCharacter : duel.player2User?.selectedCharacter;
   }
   if (side === "self") {
-    return meIsPlayerOne
-      ? duel.player1User?.selectedCharacter
-      : duel.player2User?.selectedCharacter;
+    return meIsPlayerOne ? duel.player1User?.selectedCharacter : duel.player2User?.selectedCharacter;
   }
-  return meIsPlayerOne
-    ? duel.player2User?.selectedCharacter
-    : duel.player1User?.selectedCharacter;
+  return meIsPlayerOne ? duel.player2User?.selectedCharacter : duel.player1User?.selectedCharacter;
 }
 
 function getSideWallet(
@@ -844,18 +825,12 @@ function getSideWallet(
 ) {
   if (!duel) return null;
   if (!viewerIsParticipant) {
-    return side === "self"
-      ? duel.player1User?.walletAddress
-      : duel.player2User?.walletAddress;
+    return side === "self" ? duel.player1User?.walletAddress : duel.player2User?.walletAddress;
   }
   if (side === "self") {
-    return meIsPlayerOne
-      ? duel.player1User?.walletAddress
-      : duel.player2User?.walletAddress;
+    return meIsPlayerOne ? duel.player1User?.walletAddress : duel.player2User?.walletAddress;
   }
-  return meIsPlayerOne
-    ? duel.player2User?.walletAddress
-    : duel.player1User?.walletAddress;
+  return meIsPlayerOne ? duel.player2User?.walletAddress : duel.player1User?.walletAddress;
 }
 
 function formatDateTime(value?: number) {
@@ -871,36 +846,12 @@ function formatRelativeTime(value?: number, now = Date.now()) {
   const minutes = Math.floor((absMs % (60 * 60 * 1000)) / (60 * 1000));
   const days = Math.floor(hours / 24);
 
-  let parts = "";
-  if (days > 0) {
-    parts = `${days}d ${hours % 24}h`;
-  } else if (hours > 0) {
-    parts = `${hours}h ${minutes}m`;
-  } else {
-    parts = `${Math.max(1, minutes)}m`;
-  }
+  let label = "";
+  if (days > 0) label = `${days}d ${hours % 24}h`;
+  else if (hours > 0) label = `${hours}h ${minutes}m`;
+  else label = `${Math.max(1, minutes)}m`;
 
-  return diffMs >= 0 ? `in ${parts}` : `${parts} ago`;
-}
-
-function getActionCopy(
-  status: string,
-  phase: DuelPhase,
-  mySubmittedToday: boolean,
-) {
-  if (status === "RESOLVED" || status === "COMPLETED") {
-    return "The duel result is already locked. Review the board and payout state.";
-  }
-  if (phase === "upcoming") {
-    return "The arena is scheduled. Day one opens at the listed start time.";
-  }
-  if (phase === "ended") {
-    return "The grind is over. Settle the duel to finalize the payout.";
-  }
-  if (mySubmittedToday) {
-    return "Today is already secured. Return after the next rollover.";
-  }
-  return "The duel is live. Lock your daily progress before the window expires.";
+  return diffMs >= 0 ? `in ${label}` : `${label} ago`;
 }
 
 function formatOutcome(outcome: string) {
@@ -912,101 +863,58 @@ function formatOutcome(outcome: string) {
     case "DRAW_BOTH_SUCCESS":
       return "Draw. Both players completed the same number of days.";
     case "DRAW_BOTH_FAIL":
-      return "Draw. Neither player cleared enough days.";
+      return "Draw. Neither player completed enough days.";
     default:
       return outcome;
   }
 }
 
-const tileTone = StyleSheet.create({
-  orangeBase: {
-    backgroundColor: "rgba(255,107,53,0.12)",
-    borderColor: "rgba(255,107,53,0.24)",
-  },
-  orangeDone: {
-    backgroundColor: C.mana,
-    borderColor: "#ff936b",
-  },
-  orangeToday: {
-    backgroundColor: "rgba(255,107,53,0.28)",
-    borderColor: "#ff936b",
-  },
-  greenBase: {
-    backgroundColor: "rgba(0,245,160,0.12)",
-    borderColor: "rgba(0,245,160,0.22)",
-  },
-  greenDone: {
-    backgroundColor: C.green,
-    borderColor: "#5dffd0",
-  },
-  greenToday: {
-    backgroundColor: "rgba(0,245,160,0.22)",
-    borderColor: "#5dffd0",
-  },
-  missed: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  upcoming: {
-    backgroundColor: "rgba(255,255,255,0.02)",
-    borderColor: C.glassBorder,
-  },
-});
-
-const legendMap = StyleSheet.create({
-  done: {
-    backgroundColor: C.mana,
-  },
-  missed: {
-    backgroundColor: C.slate700,
-  },
-  today: {
-    backgroundColor: C.purple,
-  },
-  upcoming: {
-    backgroundColor: C.cardAlt,
-  },
-});
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: C.bg,
-  },
-  bgGlowLarge: {
-    position: "absolute",
-    top: 70,
-    left: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,107,53,0.12)",
-  },
-  bgGlowSmall: {
-    position: "absolute",
-    top: 220,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 999,
-    backgroundColor: "rgba(0,245,160,0.08)",
+    backgroundColor: "#030304",
   },
   scroll: {
-    padding: 16,
-    gap: 14,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 40,
+  },
+  bgHome: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#030304",
+  },
+  bgHomeOrb: {
+    position: "absolute",
+    top: 70,
+    left: "50%",
+    marginLeft: -150,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,107,53,0.08)",
+  },
+  particleLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
+  },
+  particle: {
+    position: "absolute",
+    width: 4,
+    height: 4,
+    borderRadius: 999,
   },
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 18,
   },
   backPill: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: C.glassBorder,
+    borderColor: "rgba(255,255,255,0.08)",
     backgroundColor: "rgba(255,255,255,0.04)",
   },
   backPillText: {
@@ -1016,411 +924,299 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: "uppercase",
   },
-  heroBadge: {
-    borderRadius: 999,
+  statusBadge: {
+    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: C.manaDim,
+    backgroundColor: "rgba(255,107,53,0.08)",
     borderWidth: 1,
-    borderColor: C.manaBorder,
+    borderColor: "rgba(255,107,53,0.18)",
   },
-  heroBadgeText: {
+  statusBadgeText: {
     color: C.white,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1.3,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
     textTransform: "uppercase",
   },
   heroCard: {
-    padding: 18,
-    backgroundColor: "rgba(18,18,26,0.95)",
-  },
-  heroHeadingRow: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "flex-start",
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 20,
     marginBottom: 18,
   },
-  heroTextBlock: {
+  heroTop: {
+    flexDirection: "row",
+    gap: 14,
+    marginBottom: 20,
+  },
+  heroTitleWrap: {
     flex: 1,
   },
   heroEyebrow: {
     color: C.mana,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1.8,
+    fontSize: 11,
+    fontWeight: "700",
     textTransform: "uppercase",
+    letterSpacing: 1.4,
     marginBottom: 8,
   },
   heroTitle: {
     color: C.white,
     fontSize: 26,
-    lineHeight: 30,
     fontWeight: "800",
     marginBottom: 8,
   },
   heroCopy: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 20,
+    color: "#9b9ba3",
+    fontSize: 14,
+    lineHeight: 21,
   },
-  potBadge: {
-    minWidth: 92,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,107,53,0.08)",
-    borderWidth: 1,
-    borderColor: C.manaBorder,
+  heroPot: {
+    minWidth: 104,
+    borderRadius: 18,
+    padding: 14,
     alignItems: "flex-end",
+    backgroundColor: "rgba(255,107,53,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,107,53,0.16)",
   },
-  potLabel: {
-    color: C.slate500,
-    fontFamily: "monospace",
+  heroPotLabel: {
+    color: "#8d8d96",
     fontSize: 10,
-    letterSpacing: 1.2,
+    fontWeight: "700",
     textTransform: "uppercase",
+    letterSpacing: 1,
     marginBottom: 4,
   },
-  potValue: {
+  heroPotValue: {
     color: C.white,
     fontSize: 16,
     fontWeight: "800",
   },
-  duelistRow: {
+  mascotShowdown: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
-    marginBottom: 18,
   },
-  mascotCard: {
+  duelistCard: {
     flex: 1,
-    borderRadius: 22,
-    padding: 14,
-    borderWidth: 1,
-    minHeight: 176,
+    alignItems: "center",
+    paddingVertical: 8,
   },
-  mascotCardMe: {
-    backgroundColor: "rgba(255,107,53,0.08)",
-    borderColor: C.manaBorder,
-  },
-  mascotCardRival: {
-    backgroundColor: "rgba(0,245,160,0.08)",
-    borderColor: "rgba(0,245,160,0.24)",
-  },
-  mascotSideLabel: {
-    color: C.slate500,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    marginBottom: 10,
-  },
-  mascotAvatarWrap: {
-    alignSelf: "center",
-    marginBottom: 10,
-  },
-  mascotSpeech: {
-    position: "absolute",
-    top: -8,
-    right: -22,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderWidth: 1,
-  },
-  mascotSpeechMe: {
-    backgroundColor: "rgba(255,107,53,0.18)",
-    borderColor: C.manaBorder,
-  },
-  mascotSpeechRival: {
-    backgroundColor: "rgba(0,245,160,0.18)",
-    borderColor: "rgba(0,245,160,0.24)",
-  },
-  mascotSpeechText: {
+  duelistName: {
+    marginTop: 10,
     color: C.white,
-    fontFamily: "monospace",
-    fontSize: 9,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  mascotName: {
-    color: C.white,
-    textAlign: "center",
     fontSize: 14,
     fontWeight: "700",
-    marginBottom: 10,
+    textAlign: "center",
   },
-  fireScore: {
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.05)",
-  },
-  fireIcon: {
-    fontSize: 14,
-  },
-  fireScoreText: {
-    color: C.white,
-    fontFamily: "monospace",
-    fontSize: 11,
-    letterSpacing: 1.2,
-  },
-  versusWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  versusRing: {
-    width: 56,
-    height: 56,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.04)",
-  },
-  versusText: {
-    color: C.white,
-    fontFamily: "monospace",
+  duelistMeta: {
+    marginTop: 4,
+    color: "#8d8d96",
     fontSize: 12,
-    letterSpacing: 1.4,
   },
-  versusSub: {
-    color: C.slate500,
-    fontSize: 11,
-  },
-  heroStats: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  heroCenter: {
+    width: 90,
+    alignItems: "center",
     gap: 10,
   },
-  statPill: {
-    width: "48%",
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "rgba(255,255,255,0.04)",
+  heroRing: {
+    width: 58,
+    height: 58,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: C.glassBorder,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  statPillLabel: {
-    color: C.slate500,
-    fontFamily: "monospace",
+  heroRingText: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+  },
+  heroCenterCopy: {
+    color: "#8d8d96",
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 16,
+  },
+  actionCard: {
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 20,
+    marginBottom: 18,
+  },
+  sectionTitle: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  sectionCopy: {
+    color: "#9b9ba3",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  buttonStack: {
+    marginTop: 16,
+    gap: 10,
+  },
+  infoCard: {
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 20,
+    marginBottom: 18,
+  },
+  infoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 8,
+  },
+  infoTile: {
+    width: "48%",
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 16,
+    padding: 14,
+  },
+  infoTileLabel: {
+    color: "#8d8d96",
     fontSize: 10,
-    letterSpacing: 1.1,
+    fontWeight: "700",
     textTransform: "uppercase",
+    letterSpacing: 1,
     marginBottom: 6,
   },
-  statPillValue: {
+  infoTileValue: {
     color: C.white,
     fontSize: 12,
     lineHeight: 18,
   },
-  boardCard: {
-    padding: 18,
-  },
-  boardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 16,
-  },
-  boardTitle: {
-    color: C.white,
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
-  boardCopy: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  dayCounter: {
-    minWidth: 82,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: C.cardAlt,
+  progressCard: {
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: C.glassBorder,
-    alignItems: "center",
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 20,
+    marginBottom: 18,
   },
-  dayCounterLabel: {
-    color: C.slate500,
-    fontFamily: "monospace",
-    fontSize: 9,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginBottom: 4,
+  weekCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
   },
-  dayCounterValue: {
+  weekTitle: {
     color: C.white,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  laneHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    fontSize: 13,
+    fontWeight: "700",
     marginBottom: 12,
   },
-  laneLabelBlock: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    width: "44%",
+  laneRow: {
+    marginBottom: 12,
   },
-  laneDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  myDot: {
-    backgroundColor: C.mana,
-  },
-  rivalDot: {
-    backgroundColor: C.green,
-  },
-  laneLabel: {
-    color: C.slate400,
-    fontFamily: "monospace",
+  laneTitle: {
+    color: "#8d8d96",
     fontSize: 11,
-    letterSpacing: 1,
+    fontWeight: "700",
     textTransform: "uppercase",
-  },
-  pathBoard: {
-    gap: 10,
-  },
-  pathRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  pathRowOffset: {
-    paddingLeft: 22,
-  },
-  tileColumn: {
-    width: 62,
-    alignItems: "center",
-    gap: 6,
-  },
-  streakTile: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: C.coal,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-  },
-  streakTileEmoji: {
-    color: C.white,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  tileDayMini: {
-    color: C.slate500,
-    fontFamily: "monospace",
-    fontSize: 10,
-  },
-  pathConnector: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pathConnectorLine: {
-    width: "88%",
-    height: 2,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    letterSpacing: 1,
     marginBottom: 8,
   },
-  pathDayText: {
-    color: C.slate500,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1,
-  },
-  tileLegend: {
+  dayGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 18,
-  },
-  legendChip: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: C.cardAlt,
+  },
+  dayCell: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: C.glassBorder,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  legendSwatch: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
+  dayCellOrange: {
+    backgroundColor: "rgba(255,107,53,0.08)",
+    borderColor: "rgba(255,107,53,0.14)",
   },
-  legendText: {
-    color: C.slate400,
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+  dayCellGreen: {
+    backgroundColor: "rgba(0,214,143,0.08)",
+    borderColor: "rgba(0,214,143,0.14)",
   },
-  actionDeck: {
-    padding: 18,
+  dayCellOrangeDone: {
+    backgroundColor: C.mana,
+    borderColor: "#ff936b",
   },
-  actionGrid: {
-    gap: 12,
-    marginTop: 14,
+  dayCellGreenDone: {
+    backgroundColor: C.success,
+    borderColor: "#55f0c2",
   },
-  actionModule: {
-    borderRadius: 20,
-    padding: 16,
-    backgroundColor: C.cardAlt,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    gap: 12,
+  dayCellToday: {
+    backgroundColor: "rgba(255,210,111,0.18)",
+    borderColor: "rgba(255,210,111,0.45)",
   },
-  actionModuleTitle: {
+  dayCellMissed: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  dayCellUpcoming: {
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderColor: "rgba(255,255,255,0.05)",
+  },
+  dayCellText: {
     color: C.white,
-    fontSize: 15,
+    fontSize: 11,
     fontWeight: "800",
   },
-  actionModuleBody: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 19,
+  hiddenWeeksText: {
+    marginTop: 16,
+    color: "#8d8d96",
+    fontSize: 12,
+    lineHeight: 18,
   },
   configCard: {
-    padding: 18,
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 20,
+    marginBottom: 18,
   },
   input: {
     marginTop: 12,
-    marginBottom: 14,
+    marginBottom: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: C.glassBorder,
-    backgroundColor: C.cardAlt,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
     color: C.white,
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
-  configMetaGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 14,
+  bottomBackLink: {
+    alignSelf: "center",
+    paddingVertical: 12,
+  },
+  bottomBackText: {
+    color: "#8d8d96",
+    fontSize: 12,
+    fontWeight: "700",
   },
   stateWrap: {
     flex: 1,
@@ -1436,10 +1232,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   stateCopy: {
-    color: C.slate400,
+    color: "#9b9ba3",
     fontSize: 14,
     lineHeight: 22,
     textAlign: "center",
-    marginBottom: 18,
+    maxWidth: 320,
   },
 });

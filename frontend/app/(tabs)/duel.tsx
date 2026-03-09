@@ -19,6 +19,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import Animated, {
   Easing,
   FadeInDown,
@@ -34,7 +37,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, FontAwesome5 } from "@expo/vector-icons";
 
 const QUICK_STAKES = [0.1, 0.5, 1, 2];
-const DURATION_OPTIONS = [7, 30, 365];
+const DURATION_OPTIONS = [8, 30, 90, 180];
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -46,6 +49,7 @@ type FeedbackState = {
 };
 
 type SheetMode = "create" | "join" | null;
+type PickerField = "startDate" | "startTime" | "endDate" | "endTime";
 
 const EMPTY_FEEDBACK: FeedbackState = {
   visible: false,
@@ -76,10 +80,15 @@ export default function DuelHubScreen() {
   const wallet = useWallet();
   const router = useRouter();
   const params = useLocalSearchParams<{ duelId?: string }>();
+  const defaultStartAt = getDefaultStartDate();
+  const defaultEndAt = getDefaultEndDate(defaultStartAt);
 
   const [sheetMode, setSheetMode] = useState<SheetMode>(null);
   const [stakeInput, setStakeInput] = useState("0.5");
-  const [durationDays, setDurationDays] = useState(7);
+  const [durationDays, setDurationDays] = useState(8);
+  const [startAt, setStartAt] = useState(defaultStartAt);
+  const [endAt, setEndAt] = useState(defaultEndAt);
+  const [pickerField, setPickerField] = useState<PickerField | null>(null);
   const [duelTitle, setDuelTitle] = useState("");
   const [duelDescription, setDuelDescription] = useState("");
   const [manualDuelId, setManualDuelId] = useState(
@@ -137,15 +146,36 @@ export default function DuelHubScreen() {
   ) as DuelWithParticipants | null | undefined;
 
   useEffect(() => {
+    const paramInviteId = toDuelId(params.duelId);
+    if (paramInviteId) {
+      router.replace(
+        `/invite/duel/${encodeURIComponent(String(paramInviteId))}` as any,
+      );
+      return;
+    }
     const nextInviteId = manualDuelId.trim()
       ? toDuelId(manualDuelId)
       : toDuelId(params.duelId);
     setResolvedInviteId(nextInviteId);
-  }, [manualDuelId, params.duelId]);
+  }, [manualDuelId, params.duelId, router]);
 
   useEffect(() => {
-    if (params.duelId) setSheetMode("join");
-  }, [params.duelId]);
+    if (params.duelId && !resolvedInviteId) setSheetMode("join");
+  }, [params.duelId, resolvedInviteId]);
+
+  useEffect(() => {
+    const nextDuration = Math.max(
+      1,
+      Math.ceil((endAt.getTime() - startAt.getTime()) / DAY_MS),
+    );
+    setDurationDays(nextDuration);
+  }, [endAt, startAt]);
+
+  useEffect(() => {
+    if (endAt.getTime() <= startAt.getTime()) {
+      setEndAt(addDaysToDate(startAt, 8));
+    }
+  }, [endAt, startAt]);
 
   const activeDuels = (duels ?? []).filter((d) => d.status === "ACTIVE");
   const openDuels = (duels ?? []).filter((d) => d.status === "OPEN");
@@ -167,18 +197,52 @@ export default function DuelHubScreen() {
     message: string,
   ) => setFeedback({ visible: true, tone, title, message });
 
+  const openPicker = (field: PickerField) => {
+    setPickerField(field);
+  };
+
+  const handlePickerChange = (
+    event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (event.type === "dismissed" || !selectedDate || !pickerField) {
+      setPickerField(null);
+      return;
+    }
+
+    if (pickerField === "startDate") {
+      setStartAt((current) => mergeDatePart(current, selectedDate));
+    } else if (pickerField === "startTime") {
+      setStartAt((current) => mergeTimePart(current, selectedDate));
+    } else if (pickerField === "endDate") {
+      setEndAt((current) => mergeDatePart(current, selectedDate));
+    } else if (pickerField === "endTime") {
+      setEndAt((current) => mergeTimePart(current, selectedDate));
+    }
+
+    setPickerField(null);
+  };
+
+  const applyDurationPreset = (days: number) => {
+    setDurationDays(days);
+    setEndAt(addDaysToDate(startAt, days));
+  };
+
   const shareInviteLink = async (duelId: string) => {
-    // const inviteUrl = Linking.createURL("/duel", { queryParams: { duelId } });
-    const inviteUrl = `https://strivioz.vercel.app/duel/${duelId}`;
+    const inviteUrl = `https://strivioz.vercel.app/invite/duel/${duelId}`;
     await Share.share({
-      message: `Join my friend duel gate: ${inviteUrl}`,
+      message: `Review and join my Strivioz duel contract: ${inviteUrl}`,
       url: inviteUrl,
     });
   };
 
   const resetCreate = () => {
+    const nextStartAt = getDefaultStartDate();
     setStakeInput("0.5");
-    setDurationDays(7);
+    setDurationDays(8);
+    setStartAt(nextStartAt);
+    setEndAt(getDefaultEndDate(nextStartAt));
+    setPickerField(null);
     setDuelTitle("");
     setDuelDescription("");
   };
@@ -191,9 +255,28 @@ export default function DuelHubScreen() {
       return;
     }
 
+    const startTime = startAt.getTime();
+    const endTime = endAt.getTime();
+    const durationMs = endTime - startTime;
+
+    if (startTime <= Date.now()) {
+      openFeedback("error", "Invalid Start", "Start date and time must be in the future.");
+      return;
+    }
+    if (endTime <= startTime) {
+      openFeedback("error", "Invalid End", "End date and time must be after the start.");
+      return;
+    }
+    if (durationMs <= 7 * DAY_MS) {
+      openFeedback("error", "Invalid Duration", "Duel duration must be greater than 7 days.");
+      return;
+    }
+    if (durationMs >= 365 * DAY_MS) {
+      openFeedback("error", "Invalid Duration", "Duel duration must be less than 365 days.");
+      return;
+    }
+
     setCreateLoading(true);
-    const startTime = Date.now() + HOUR_MS;
-    const endTime = startTime + durationDays * DAY_MS;
     let onChainDuel: Awaited<ReturnType<typeof wallet.createDuel>> | null = null;
 
     try {
@@ -267,6 +350,7 @@ export default function DuelHubScreen() {
         "Joined Duel",
         `You are now live in duel ${onChainJoin.duelAddress.slice(0, 8)}...`,
       );
+      router.replace(`/(tabs)/duel/${encodeURIComponent(String(inviteDuel._id))}` as any);
     } catch (error: any) {
       openFeedback(
         "error",
@@ -416,14 +500,14 @@ export default function DuelHubScreen() {
           style={styles.input}
         />
 
-        <SheetLabel label="Duration" />
+        <SheetLabel label="Quick Duration" />
         <View style={styles.chipGroup}>
           {DURATION_OPTIONS.map((value) => (
             <Chip
               key={value}
               label={`${value} Days`}
               selected={durationDays === value}
-              onPress={() => setDurationDays(value)}
+              onPress={() => applyDurationPreset(value)}
             />
           ))}
         </View>
@@ -437,6 +521,26 @@ export default function DuelHubScreen() {
               onPress={() => setStakeInput(String(value))}
             />
           ))}
+        </View>
+
+        <SheetLabel label="Start Date & Time" />
+        <View style={styles.datetimeGrid}>
+          <DateChip label="Date" value={formatPickerDate(startAt)} onPress={() => openPicker("startDate")} />
+          <DateChip label="Time" value={formatPickerTime(startAt)} onPress={() => openPicker("startTime")} />
+        </View>
+
+        <SheetLabel label="End Date & Time" />
+        <View style={styles.datetimeGrid}>
+          <DateChip label="Date" value={formatPickerDate(endAt)} onPress={() => openPicker("endDate")} />
+          <DateChip label="Time" value={formatPickerTime(endAt)} onPress={() => openPicker("endTime")} />
+        </View>
+
+        <View style={styles.contractNotice}>
+          <Text style={styles.contractNoticeLabel}>Contract Duration</Text>
+          <Text style={styles.contractNoticeValue}>{durationDays} days</Text>
+          <Text style={styles.contractNoticeCopy}>
+            Duration must be greater than 7 days and less than 365 days.
+          </Text>
         </View>
 
         <TextInput
@@ -469,6 +573,16 @@ export default function DuelHubScreen() {
             {createLoading ? "Creating..." : "Create & Lock"}
           </Text>
         </TouchableOpacity>
+
+        {pickerField ? (
+          <DateTimePicker
+            value={pickerField.startsWith("start") ? startAt : endAt}
+            mode={pickerField.endsWith("Date") ? "date" : "time"}
+            display="default"
+            minimumDate={pickerField.startsWith("start") ? new Date(Date.now() + 60 * 1000) : startAt}
+            onChange={handlePickerChange}
+          />
+        ) : null}
       </PremiumSheet>
 
       <PremiumSheet visible={sheetMode === "join"} onClose={() => !joinInviteLoading && setSheetMode(null)}>
@@ -787,6 +901,23 @@ function Chip({
   );
 }
 
+function DateChip({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.dateChip} onPress={onPress}>
+      <Text style={styles.dateChipLabel}>{label}</Text>
+      <Text style={styles.dateChipValue}>{value}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function PreviewRow({
   label,
   value,
@@ -812,6 +943,42 @@ function PreviewRow({
       </Text>
     </View>
   );
+}
+
+function getDefaultStartDate() {
+  const date = new Date(Date.now() + HOUR_MS);
+  date.setMinutes(0, 0, 0);
+  return date;
+}
+
+function getDefaultEndDate(startAt: Date) {
+  return addDaysToDate(startAt, 8);
+}
+
+function addDaysToDate(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function mergeDatePart(base: Date, next: Date) {
+  const merged = new Date(base);
+  merged.setFullYear(next.getFullYear(), next.getMonth(), next.getDate());
+  return merged;
+}
+
+function mergeTimePart(base: Date, next: Date) {
+  const merged = new Date(base);
+  merged.setHours(next.getHours(), next.getMinutes(), 0, 0);
+  return merged;
+}
+
+function formatPickerDate(date: Date) {
+  return date.toLocaleDateString();
+}
+
+function formatPickerTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function formatRowTitle(duel: DuelWithParticipants) {
@@ -1057,6 +1224,7 @@ const styles = StyleSheet.create({
   textarea: { minHeight: 84, textAlignVertical: "top" },
   chipGroup: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12 },
   chipGroupCompact: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 },
+  datetimeGrid: { flexDirection: "row", gap: 10, marginBottom: 12 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -1071,6 +1239,40 @@ const styles = StyleSheet.create({
   },
   chipText: { color: C.white, fontSize: 12, fontWeight: "700" },
   chipTextActive: { color: C.white },
+  dateChip: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dateChipLabel: {
+    color: C.mutedBright,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  dateChipValue: { color: C.white, fontSize: 13, fontWeight: "700" },
+  contractNotice: {
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 14,
+  },
+  contractNoticeLabel: {
+    color: C.mutedBright,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  contractNoticeValue: { color: C.white, fontSize: 18, fontWeight: "800", marginBottom: 6 },
+  contractNoticeCopy: { color: C.mutedBright, fontSize: 12, lineHeight: 18 },
   previewBox: {
     backgroundColor: "rgba(255,255,255,0.02)",
     borderWidth: 1,
