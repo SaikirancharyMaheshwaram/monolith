@@ -29,7 +29,6 @@ import Animated, {
   Extrapolation,
   FadeInDown,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -331,7 +330,7 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
   };
 
   // Trigger mascot animation
-  const triggerMascotAnimation = (isMe: boolean, characterId?: string) => {
+  const triggerMascotAnimation = useCallback((isMe: boolean, characterId?: string) => {
     const mascotId = getMascotId(characterId);
     const animType = MASCOT_ANIMATIONS[mascotId] || "shake";
     const sound = MASCOT_SOUNDS[mascotId] || "ROAR!";
@@ -441,7 +440,17 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
       withTiming(1.15, { duration: 100 }),
       withSpring(1, { damping: 8 }),
     );
-  };
+  }, [
+    myMascotBrightness,
+    myMascotRotate,
+    myMascotScale,
+    myMascotTranslateY,
+    rivalMascotBrightness,
+    rivalMascotRotate,
+    rivalMascotScale,
+    rivalMascotTranslateY,
+    vsScale,
+  ]);
 
   // Auto-trigger animations when duel is selected
   useEffect(() => {
@@ -456,7 +465,7 @@ export function DuelDetailScreen({ duelIdValue }: Props) {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [selectedDuelId]);
+  }, [meCharacter, rivalCharacter, selectedDuel, triggerMascotAnimation]);
 
   const openFeedback = (
     tone: FeedbackState["tone"],

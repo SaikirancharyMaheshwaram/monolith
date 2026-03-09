@@ -28,19 +28,7 @@ export default function TabLayout() {
         },
       }}
     >
-      <Tabs.Screen
-        name="landing"
-        options={{
-          title: "Brief",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol
-              size={22}
-              name="chevron.left.forwardslash.chevron.right"
-              color={color}
-            />
-          ),
-        }}
-      />
+    
 
       <Tabs.Screen
         name="index"

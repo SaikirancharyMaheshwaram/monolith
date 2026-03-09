@@ -6,7 +6,6 @@ import { formatDuelStatus, getDuelDescription, getDuelTitle } from "@/lib/duel-c
 import { DuelWithParticipants, getParticipantLabel, toDuelId } from "@/lib/duel-view";
 import { useWallet } from "@/lib/use-wallet";
 import { useMutation, useQuery } from "convex/react";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
