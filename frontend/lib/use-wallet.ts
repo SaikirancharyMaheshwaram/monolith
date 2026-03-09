@@ -27,8 +27,8 @@ import { useUserStore } from "@/stores/userStore";
 import { useWalletStore } from "@/stores/use-wallet-store";
 
 const APP_IDENTITY = {
-  name: "SolScan",
-  uri: "https://solscan.io",
+  name: "Strivoiz",
+  uri: "https://strivioz.vercel.app",
   icon: "favicon.ico",
 };
 

@@ -226,7 +226,7 @@ export default function HomeScreen() {
     await joinDuel(candidate._id, user._id);
     await fetchActiveDuels(user._id);
     setShowArenaModal(false);
-    router.push(`/(tabs)/battle?duelId=${encodeURIComponent(String(candidate._id))}` as any);
+    router.push(`/(tabs)/duel/${encodeURIComponent(String(candidate._id))}` as any);
   };
 
   const handleJoinInvite = async () => {
@@ -234,7 +234,7 @@ export default function HomeScreen() {
     await joinDuel(inviteDuel._id, user._id);
     await fetchActiveDuels(user._id);
     setShowInviteModal(false);
-    router.push(`/(tabs)/battle?duelId=${encodeURIComponent(String(inviteDuel._id))}` as any);
+    router.push(`/(tabs)/duel/${encodeURIComponent(String(inviteDuel._id))}` as any);
   };
 
   return (
@@ -321,7 +321,7 @@ export default function HomeScreen() {
             isLive={activeDuel.status === "ACTIVE"}
             onEnter={() =>
               router.push(
-                `/(tabs)/battle?duelId=${encodeURIComponent(String(activeDuel._id))}` as any,
+                `/(tabs)/duel/${encodeURIComponent(String(activeDuel._id))}` as any,
               )
             }
           />
@@ -338,7 +338,7 @@ export default function HomeScreen() {
                   activeOpacity={0.9}
                   onPress={() =>
                     router.push(
-                      `/(tabs)/battle?duelId=${encodeURIComponent(String(duel._id))}` as any,
+                      `/(tabs)/duel/${encodeURIComponent(String(duel._id))}` as any,
                     )
                   }
                 >
