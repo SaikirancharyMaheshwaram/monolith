@@ -1,10 +1,10 @@
-import { CHARACTER_BY_ID } from "@/components/characters";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { SystemWindow } from "@/components/SystemWindow";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
 import { useWallet } from "@/lib/use-wallet";
 import { useQuery } from "convex/react";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 function shortAddress(value: string) {
@@ -47,9 +47,6 @@ export default function ProfileScreen() {
     );
   }
 
-  const avatar =
-    CHARACTER_BY_ID[user.selectedCharacter as keyof typeof CHARACTER_BY_ID]
-      ?.image;
   const totalMatches = user.totalWins + user.totalLosses;
   const winRate =
     totalMatches > 0 ? `${Math.round((user.totalWins / totalMatches) * 100)}%` : "0%";
@@ -61,11 +58,11 @@ export default function ProfileScreen() {
         <SystemWindow style={styles.heroWindow}>
           <View style={styles.heroGlow} />
           <View style={styles.heroTopRow}>
-            {avatar ? (
-              <Image source={avatar} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarFallback} />
-            )}
+            <CharacterAvatar
+              characterId={user.selectedCharacter}
+              label={user.username}
+              size={96}
+            />
 
             <View style={styles.identityBlock}>
               <Text style={styles.badge}>Hunter Profile</Text>
@@ -217,21 +214,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-  },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.manaBorder,
-  },
-  avatarFallback: {
-    width: 96,
-    height: 96,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    backgroundColor: C.card,
   },
   identityBlock: {
     flex: 1,

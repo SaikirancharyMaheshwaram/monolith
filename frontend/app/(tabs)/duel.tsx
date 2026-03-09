@@ -1,7 +1,5 @@
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { FeedbackModal } from "@/components/FeedbackModal";
-import { GateButton } from "@/components/GateButton";
-import { SystemWindow } from "@/components/SystemWindow";
-import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import {
@@ -10,18 +8,18 @@ import {
   getDuelDescription,
   getDuelTitle,
 } from "@/lib/duel-copy";
-import { DuelWithParticipants, getParticipantLabel, toDuelId } from "@/lib/duel-view";
+import {
+  DuelWithParticipants,
+  getParticipantLabel,
+  toDuelId,
+} from "@/lib/duel-view";
 import { useWallet } from "@/lib/use-wallet";
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
 import { useMutation, useQuery } from "convex/react";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Modal,
-  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -30,13 +28,21 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  FadeInDown,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const QUICK_STAKES = [0.1, 0.5, 1, 2];
+const DURATION_OPTIONS = [7, 30, 365];
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-
-type PickerState = { field: "start" | "end"; mode: "date" | "time" } | null;
 
 type FeedbackState = {
   visible: boolean;
@@ -45,6 +51,8 @@ type FeedbackState = {
   message: string;
 };
 
+type SheetMode = "create" | "join" | null;
+
 const EMPTY_FEEDBACK: FeedbackState = {
   visible: false,
   tone: "success",
@@ -52,21 +60,35 @@ const EMPTY_FEEDBACK: FeedbackState = {
   message: "",
 };
 
+const COLORS = {
+  bg: "#030304",
+  card: "rgba(12,12,16,0.88)",
+  cardHover: "rgba(18,18,24,0.96)",
+  border: "rgba(255,255,255,0.08)",
+  borderSoft: "rgba(255,255,255,0.05)",
+  orange: "#ff6b35",
+  orangeSoft: "#ff8f66",
+  green: "#00d68f",
+  red: "#ff3b5c",
+  yellow: "#ffc107",
+  purple: "#a855f7",
+  text: "#ffffff",
+  muted: "#9b9ba3",
+  dim: "#676770",
+};
+
+const PARTICLES = Array.from({ length: 7 }, (_, i) => i);
+
 export default function DuelHubScreen() {
   const wallet = useWallet();
   const router = useRouter();
   const params = useLocalSearchParams<{ duelId?: string }>();
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showContractModal, setShowContractModal] = useState(false);
-  const defaultStart = new Date(Date.now() + HOUR_MS);
-  const defaultEnd = new Date(defaultStart.getTime() + 7 * DAY_MS);
-  const [stakeInput, setStakeInput] = useState("1");
-  const [startAt, setStartAt] = useState(defaultStart);
-  const [endAt, setEndAt] = useState(defaultEnd);
+  const [sheetMode, setSheetMode] = useState<SheetMode>(null);
+  const [stakeInput, setStakeInput] = useState("0.5");
+  const [durationDays, setDurationDays] = useState(7);
   const [duelTitle, setDuelTitle] = useState("");
   const [duelDescription, setDuelDescription] = useState("");
-  const [picker, setPicker] = useState<PickerState>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [joinInviteLoading, setJoinInviteLoading] = useState(false);
   const [manualDuelId, setManualDuelId] = useState(
@@ -78,11 +100,23 @@ export default function DuelHubScreen() {
   const [readChecked, setReadChecked] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(EMPTY_FEEDBACK);
 
-  const createFriendDuel = useMutation(
-    api.duels.createFriendDuel.createFriendDuel,
-  );
+  const createFriendDuel = useMutation(api.duels.createFriendDuel.createFriendDuel);
   const cancelOpenDuel = useMutation(api.duels.cancelOpenDuel.cancelOpenDuel);
   const joinFriendDuel = useMutation(api.duels.joinFriendDuel.joinFriendDuel);
+
+  const mesh = useSharedValue(0);
+  useEffect(() => {
+    mesh.value = withRepeat(
+      withTiming(1, { duration: 12000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+  }, [mesh]);
+
+  const meshStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(mesh.value, [0, 1], [1, 1.05]) }],
+    opacity: interpolate(mesh.value, [0, 1], [1, 0.78]),
+  }));
 
   const walletAddress = wallet.publicKey?.toBase58() ?? "";
   const user = useQuery(
@@ -92,7 +126,7 @@ export default function DuelHubScreen() {
   const duels = useQuery(
     api.duels.getUserDuels.getUserDuels,
     user ? { userId: user._id } : "skip",
-  );
+  ) as DuelWithParticipants[] | undefined;
   const inviteDuel = useQuery(
     api.duels.getDuelById.getDuelById,
     resolvedInviteId ? { id: resolvedInviteId } : "skip",
@@ -104,6 +138,12 @@ export default function DuelHubScreen() {
       : toDuelId(params.duelId);
     setResolvedInviteId(nextInviteId);
   }, [manualDuelId, params.duelId]);
+
+  useEffect(() => {
+    if (params.duelId) {
+      setSheetMode("join");
+    }
+  }, [params.duelId]);
 
   const activeDuels = (duels ?? []).filter((d) => d.status === "ACTIVE");
   const openDuels = (duels ?? []).filter((d) => d.status === "OPEN");
@@ -121,12 +161,9 @@ export default function DuelHubScreen() {
     return true;
   }, [inviteDuel, user]);
 
-  const inviteOnchainDuelAddress = inviteDuel?.onchainDuelAddress;
-  const inviteOnchainEscrowAddress = inviteDuel?.onchainEscrowAddress;
   const stakeAmount = Number.parseFloat(stakeInput);
-  const typedInviteId = manualDuelId.trim();
-  const hasInviteInput = typedInviteId.length > 0;
-  const hasValidInviteFormat = !hasInviteInput || !!toDuelId(typedInviteId);
+  const hasInviteInput = manualDuelId.trim().length > 0;
+  const hasValidInviteFormat = !hasInviteInput || !!toDuelId(manualDuelId.trim());
 
   const openFeedback = (
     tone: FeedbackState["tone"],
@@ -142,81 +179,25 @@ export default function DuelHubScreen() {
     });
   };
 
-  const updateDatePart = (
-    field: "start" | "end",
-    mode: "date" | "time",
-    nextValue: Date,
-  ) => {
-    const source = field === "start" ? startAt : endAt;
-    const merged = new Date(source);
-
-    if (mode === "date") {
-      merged.setFullYear(
-        nextValue.getFullYear(),
-        nextValue.getMonth(),
-        nextValue.getDate(),
-      );
-    } else {
-      merged.setHours(nextValue.getHours(), nextValue.getMinutes(), 0, 0);
-    }
-
-    if (field === "start") {
-      setStartAt(merged);
-      if (endAt <= merged) {
-        setEndAt(new Date(merged.getTime() + DAY_MS));
-      }
-      return;
-    }
-
-    setEndAt(merged);
-  };
-
-  const handlePickerChange = (
-    event: DateTimePickerEvent,
-    selectedValue?: Date,
-  ) => {
-    const currentPicker = picker;
-    setPicker(null);
-
-    if (!currentPicker || event.type === "dismissed" || !selectedValue) {
-      return;
-    }
-
-    updateDatePart(currentPicker.field, currentPicker.mode, selectedValue);
+  const resetCreateSheet = () => {
+    setStakeInput("0.5");
+    setDurationDays(7);
+    setDuelTitle("");
+    setDuelDescription("");
   };
 
   const handleCreateInvite = async () => {
     if (!walletAddress) return;
     if (!Number.isFinite(stakeAmount) || stakeAmount <= 0) {
-      openFeedback(
-        "error",
-        "Invalid stake",
-        "Enter a custom SOL amount greater than zero.",
-      );
-      return;
-    }
-    if (startAt.getTime() <= Date.now()) {
-      openFeedback(
-        "error",
-        "Invalid start time",
-        "Choose a start date and time in the future.",
-      );
-      return;
-    }
-    if (endAt.getTime() <= startAt.getTime()) {
-      openFeedback(
-        "error",
-        "Invalid end time",
-        "End date and time must be after the start.",
-      );
+      openFeedback("error", "Invalid stake", "Enter a valid SOL amount greater than zero.");
       return;
     }
 
     setCreateLoading(true);
-    const startTime = startAt.getTime();
-    const endTime = endAt.getTime();
-    let onChainDuel: Awaited<ReturnType<typeof wallet.createDuel>> | null =
-      null;
+    const startTime = Date.now() + HOUR_MS;
+    const endTime = startTime + durationDays * DAY_MS;
+    let onChainDuel: Awaited<ReturnType<typeof wallet.createDuel>> | null = null;
+
     try {
       onChainDuel = await wallet.createDuel({
         stakeAmountSol: stakeAmount,
@@ -229,8 +210,10 @@ export default function DuelHubScreen() {
         stakeAmount,
         startTime,
         endTime,
-        title: duelTitle.trim() || undefined,
-        description: duelDescription.trim() || undefined,
+        title: duelTitle.trim() || `Discipline Duel • ${durationDays} Days`,
+        description:
+          duelDescription.trim() ||
+          "A focused streak battle with locked stake and daily check-ins.",
         onchainDuelAddress: onChainDuel.duelAddress,
         onchainEscrowAddress: onChainDuel.escrowAddress,
         onchainProgramId: onChainDuel.programId,
@@ -238,17 +221,12 @@ export default function DuelHubScreen() {
         onchainNonce: onChainDuel.duelNonce,
       });
 
-      setShowCreateModal(false);
-      setStakeInput("1");
-      const nextStart = new Date(Date.now() + HOUR_MS);
-      setStartAt(nextStart);
-      setEndAt(new Date(nextStart.getTime() + 7 * DAY_MS));
-      setDuelTitle("");
-      setDuelDescription("");
+      setSheetMode(null);
+      resetCreateSheet();
       openFeedback(
         "success",
-        "Invite Forged",
-        `Duel ${String(duelId)} is live and the on-chain escrow has been created.`,
+        "Duel Created",
+        `Duel ${String(duelId)} was created and stake escrow is now locked on-chain.`,
       );
       await shareInviteLink(String(duelId));
     } catch (error: any) {
@@ -267,37 +245,33 @@ export default function DuelHubScreen() {
   const handleJoinInvite = async () => {
     if (!user || !inviteDuel || !canJoinInvite) return;
     if (!readChecked) {
-      openFeedback(
-        "error",
-        "Contract Required",
-        "Read and confirm the duel contract before joining.",
-      );
+      openFeedback("error", "Contract Required", "Read and confirm the stake rules before joining.");
       return;
     }
-    if (!inviteOnchainDuelAddress) {
-      openFeedback(
-        "error",
-        "Join Failed",
-        "This duel is missing on-chain metadata.",
-      );
+    if (!inviteDuel.onchainDuelAddress) {
+      openFeedback("error", "Join Failed", "This duel is missing on-chain metadata.");
       return;
     }
 
     setJoinInviteLoading(true);
     let onChainJoin: Awaited<ReturnType<typeof wallet.joinDuel>> | null = null;
+
     try {
       onChainJoin = await wallet.joinDuel({
-        duelAddress: inviteOnchainDuelAddress,
-        escrowAddress: inviteOnchainEscrowAddress,
+        duelAddress: inviteDuel.onchainDuelAddress,
+        escrowAddress: inviteDuel.onchainEscrowAddress,
       });
+
       await joinFriendDuel({
         duelId: inviteDuel._id,
         player2: user._id,
       });
-      setShowContractModal(false);
+
+      setSheetMode(null);
+      setReadChecked(false);
       openFeedback(
         "success",
-        "Gate Joined",
+        "Joined Duel",
         `You are now live in duel ${onChainJoin.duelAddress.slice(0, 8)}...`,
       );
     } catch (error: any) {
@@ -316,37 +290,25 @@ export default function DuelHubScreen() {
   const handleCancelOpen = async (duel: DuelWithParticipants) => {
     if (!user) return;
     try {
-      if (!duel.onchainDuelAddress) {
-        throw new Error("On-chain duel metadata is missing.");
-      }
-
+      if (!duel.onchainDuelAddress) throw new Error("On-chain duel metadata is missing.");
       await wallet.cancelDuel({
         duelAddress: duel.onchainDuelAddress,
         escrowAddress: duel.onchainEscrowAddress,
       });
       await cancelOpenDuel({ duelId: duel._id, caller: user._id });
-      openFeedback(
-        "success",
-        "Duel Cancelled",
-        "The duel was cancelled on-chain and in Convex.",
-      );
+      openFeedback("success", "Duel Cancelled", "The duel was cancelled on-chain and in Convex.");
     } catch (error: any) {
-      openFeedback(
-        "error",
-        "Cancel Failed",
-        error?.message ?? "Could not cancel duel.",
-      );
+      openFeedback("error", "Cancel Failed", error?.message ?? "Could not cancel duel.");
     }
   };
 
   if (!wallet.connected) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <ArenaBackground meshStyle={meshStyle} />
         <View style={styles.centered}>
-          <Text style={styles.header}>DUEL BOARD LOCKED</Text>
-          <Text style={styles.sub}>
-            Connect wallet to create or join friend duels.
-          </Text>
+          <Text style={styles.lockTitle}>DUEL BOARD LOCKED</Text>
+          <Text style={styles.lockCopy}>Connect wallet to create or join friend duels.</Text>
         </View>
       </SafeAreaView>
     );
@@ -355,8 +317,9 @@ export default function DuelHubScreen() {
   if (user === undefined || duels === undefined) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <ArenaBackground meshStyle={meshStyle} />
         <View style={styles.centered}>
-          <Text style={styles.header}>SYNCING DUEL LOGS...</Text>
+          <Text style={styles.lockTitle}>SYNCING DUEL LOGS...</Text>
         </View>
       </SafeAreaView>
     );
@@ -365,303 +328,308 @@ export default function DuelHubScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <ArenaBackground meshStyle={meshStyle} />
         <View style={styles.centered}>
-          <Text style={styles.header}>NO HUNTER PROFILE</Text>
-          <Text style={styles.sub}>Complete registration on Home first.</Text>
+          <Text style={styles.lockTitle}>NO HUNTER PROFILE</Text>
+          <Text style={styles.lockCopy}>Complete registration on Home first.</Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  const winTake = Number.isFinite(stakeAmount) ? (stakeAmount * 0.7).toFixed(2) : "--";
+  const vaultTake = Number.isFinite(stakeAmount) ? (stakeAmount * 0.25).toFixed(2) : "--";
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <SystemWindow style={styles.heroWindow}>
-          <View style={styles.heroGlow} />
-          <View style={styles.heroGlowSecondary} />
-          <Text style={styles.sectionLabel}>Duel Board</Text>
-          <Text style={styles.heroEyebrow}>Friend duels</Text>
-          <Text style={styles.heroTitle}>Forge, scan, and enter each battle from one board.</Text>
-          <Text style={styles.heroText}>
-            Shared links open safely, invalid ids stay inside the radar card,
-            and every listed duel can jump straight into its own battle view.
-          </Text>
-          <View style={styles.heroMetrics}>
-            <HeroMetric label="Live" value={String(activeDuels.length).padStart(2, "0")} />
-            <HeroMetric label="Open" value={String(openDuels.length).padStart(2, "0")} />
-            <HeroMetric label="History" value={String(historyDuels.length).padStart(2, "0")} />
-          </View>
-          <View style={styles.heroActionRow}>
-            <GateButton label="Create Challenge" onPress={() => setShowCreateModal(true)} />
-          </View>
-        </SystemWindow>
+      <ArenaBackground meshStyle={meshStyle} />
 
-        <SystemWindow style={styles.lookupWindow}>
-          <Text style={styles.sectionLabel}>Invite Radar</Text>
-          <TextInput
-            value={manualDuelId}
-            onChangeText={setManualDuelId}
-            placeholder="Paste duel id or open a shared link"
-            placeholderTextColor={C.slate600}
-            autoCapitalize="none"
-            style={styles.input}
-          />
-          <Text style={styles.hint}>
-            Paste a shared duel id. Only well-formed ids are queried, so broken links never crash the join flow.
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View entering={FadeInDown.duration(500)} style={styles.heroCard}>
+          <Text style={styles.sectionTitle}>The Arena</Text>
+          <Text style={styles.heroTitle}>Select a duel to view details</Text>
+          <Text style={styles.heroCopy}>
+            Create a locked challenge, paste an invite code, or jump straight into a live battle from the board below.
           </Text>
-        </SystemWindow>
+
+          <View style={styles.ctaRow}>
+            <TouchableOpacity style={styles.primaryCta} onPress={() => setSheetMode("create")}>
+              <Text style={styles.primaryCtaText}>Create</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryCta} onPress={() => setSheetMode("join")}>
+              <Text style={styles.secondaryCtaText}>Join</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.heroStats}>
+            <HeroStat label="Live" value={String(activeDuels.length).padStart(2, "0")} />
+            <HeroStat label="Open" value={String(openDuels.length).padStart(2, "0")} />
+            <HeroStat label="History" value={String(historyDuels.length).padStart(2, "0")} />
+          </View>
+        </Animated.View>
 
         {resolvedInviteId && inviteDuel ? (
-          <SystemWindow style={styles.inviteWindow}>
-            <Text style={styles.sectionLabel}>Live Invite</Text>
-            <Text style={styles.inviteTitle}>{getDuelTitle(inviteDuel)}</Text>
-            <Text style={styles.meta}>{getDuelDescription(inviteDuel)}</Text>
-            <View style={styles.inviteStats}>
-              <InviteStat label="Creator" value={getParticipantLabel(inviteDuel, "player1")} />
-              <InviteStat label="Rival" value={getParticipantLabel(inviteDuel, "player2")} />
-              <InviteStat label="Stake" value={`${inviteDuel.stakeAmount} SOL`} />
-              <InviteStat label="State" value={formatDuelStatus(inviteDuel.status as any)} />
+          <Animated.View entering={FadeInDown.duration(520).delay(60)} style={styles.featureCard}>
+            <Text style={styles.featureEyebrow}>Invite Preview</Text>
+            <View style={styles.featureHeader}>
+              <View>
+                <Text style={styles.featureTitle}>{getDuelTitle(inviteDuel)}</Text>
+                <Text style={styles.featureText}>{getDuelDescription(inviteDuel)}</Text>
+              </View>
+              <StatusPill status={inviteDuel.status} />
             </View>
-            <Text style={styles.meta}>
-              Starts: {formatStartTime(inviteDuel.startTime)}
-            </Text>
-            <Text style={styles.meta}>
-              Ends: {formatStartTime(inviteDuel.endTime)}
-            </Text>
-            <Text style={styles.meta}>
-              Status: {formatDuelStatus(inviteDuel.status as any)}
-            </Text>
-            <Text style={styles.meta}>
-              On-chain duel:{" "}
-              {inviteDuel.onchainDuelAddress ? "Attached" : "Missing"}
-            </Text>
-            <View style={styles.actionStack}>
-              <GateButton
-                label="Review Contract"
-                onPress={() => setShowContractModal(true)}
-                disabled={!canJoinInvite}
-              />
-              <GateButton
-                label="Open Battle Detail"
-                variant="ghost"
-                onPress={() =>
-                  router.push(
-                    `/(tabs)/battle?duelId=${encodeURIComponent(String(inviteDuel._id))}` as any,
-                  )
-                }
-              />
+            <View style={styles.featureMetaRow}>
+              <Text style={styles.featureMeta}>{getParticipantLabel(inviteDuel, "player1")}</Text>
+              <Text style={styles.featureMeta}>{inviteDuel.stakeAmount} SOL</Text>
+              <Text style={styles.featureMeta}>{formatStartTime(inviteDuel.startTime)}</Text>
             </View>
-          </SystemWindow>
+            <TouchableOpacity
+              style={[styles.primaryInlineButton, !canJoinInvite && styles.buttonDisabled]}
+              onPress={() => setSheetMode("join")}
+              disabled={!canJoinInvite}
+            >
+              <Text style={styles.primaryInlineText}>Review Invite</Text>
+            </TouchableOpacity>
+          </Animated.View>
         ) : hasInviteInput ? (
-          <SystemWindow>
-            <Text style={styles.sectionLabel}>Invite Radar</Text>
-            <Text style={styles.empty}>
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Invite radar</Text>
+            <Text style={styles.emptyCopy}>
               {hasValidInviteFormat
                 ? "No duel found for that id yet."
                 : "That duel id format looks invalid. Use the full id from the shared link."}
             </Text>
-          </SystemWindow>
+          </View>
         ) : null}
 
-        <Section title="Your Active Gates" emptyText="No active gate running.">
-          {activeDuels.map((duel) => (
-            <DuelCard
-              key={duel._id}
-              duel={duel}
-              onPrimaryLabel="Enter PvP"
-              onPrimaryPress={() =>
-                router.push(
-                  `/(tabs)/battle?duelId=${encodeURIComponent(String(duel._id))}` as any,
-                )
-              }
-            />
-          ))}
+        <Section title="Ongoing Duels">
+          {activeDuels.length === 0 ? (
+            <EmptyState text="No active duel running yet." />
+          ) : (
+            activeDuels.map((duel, index) => (
+              <DuelListItem
+                key={duel._id}
+                duel={duel}
+                onPress={() =>
+                  router.push(`/(tabs)/battle?duelId=${encodeURIComponent(String(duel._id))}` as any)
+                }
+                delay={index}
+              />
+            ))
+          )}
         </Section>
 
-        <Section title="Your Open Invites" emptyText="No open invites waiting.">
-          {openDuels.map((duel) => (
-            <DuelCard
-              key={duel._id}
-              duel={duel}
-              onPrimaryLabel="Share Invite"
-              onPrimaryPress={() => void shareInviteLink(String(duel._id))}
-              onSecondaryLabel="Cancel Duel"
-              onSecondaryPress={() => void handleCancelOpen(duel)}
-            />
-          ))}
+        <Section title="Open Invites">
+          {openDuels.length === 0 ? (
+            <EmptyState text="No open invites waiting." />
+          ) : (
+            openDuels.map((duel, index) => (
+              <DuelListItem
+                key={duel._id}
+                duel={duel}
+                delay={index}
+                footer={
+                  <View style={styles.itemFooter}>
+                    <TouchableOpacity
+                      style={styles.inlineGhost}
+                      onPress={() => void shareInviteLink(String(duel._id))}
+                    >
+                      <Text style={styles.inlineGhostText}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.inlineDanger}
+                      onPress={() => void handleCancelOpen(duel)}
+                    >
+                      <Text style={styles.inlineDangerText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                }
+              />
+            ))
+          )}
         </Section>
 
-        <Section title="History" emptyText="No completed duels yet.">
-          {historyDuels.map((duel) => (
-            <DuelCard
-              key={duel._id}
-              duel={duel}
-              onPrimaryLabel="View PvP"
-              onPrimaryPress={() =>
-                router.push(
-                  `/(tabs)/battle?duelId=${encodeURIComponent(String(duel._id))}` as any,
-                )
-              }
-              compact
-            />
-          ))}
+        <Section title="Resolved Duels">
+          {historyDuels.length === 0 ? (
+            <EmptyState text="No completed duels yet." />
+          ) : (
+            historyDuels.map((duel, index) => (
+              <DuelListItem
+                key={duel._id}
+                duel={duel}
+                onPress={() =>
+                  router.push(`/(tabs)/battle?duelId=${encodeURIComponent(String(duel._id))}` as any)
+                }
+                delay={index}
+                resolved
+              />
+            ))
+          )}
         </Section>
       </ScrollView>
 
-      <Modal transparent visible={showCreateModal} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Forge Invite Gate</Text>
-            <Text style={styles.modalLabel}>Duel title</Text>
-            <TextInput
-              value={duelTitle}
-              onChangeText={setDuelTitle}
-              placeholder="Example: No Sugar Sprint"
-              placeholderTextColor={C.slate600}
-              style={styles.input}
-            />
-            <Text style={styles.modalLabel}>Duel description</Text>
-            <TextInput
-              value={duelDescription}
-              onChangeText={setDuelDescription}
-              placeholder="What both players are trying to do and why it matters"
-              placeholderTextColor={C.slate600}
-              multiline
-              style={[styles.input, styles.textarea]}
-            />
-            <Text style={styles.modalLabel}>Stake (SOL)</Text>
-            <TextInput
-              value={stakeInput}
-              onChangeText={setStakeInput}
-              placeholder="1.25"
-              placeholderTextColor={C.slate600}
-              keyboardType="decimal-pad"
-              style={styles.input}
-            />
-            <View style={styles.chipRow}>
-              {QUICK_STAKES.map((value) => (
-                <Chip
-                  key={value}
-                  label={`${value} SOL`}
-                  selected={Number(stakeInput) === value}
-                  onPress={() => setStakeInput(String(value))}
-                />
-              ))}
-            </View>
-            <Text style={styles.modalLabel}>Start date and time</Text>
-            <View style={styles.scheduleGrid}>
-              <TouchableOpacity
-                style={styles.scheduleButton}
-                onPress={() => setPicker({ field: "start", mode: "date" })}
-              >
-                <Text style={styles.scheduleLabel}>Date</Text>
-                <Text style={styles.scheduleValue}>
-                  {startAt.toLocaleDateString()}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.scheduleButton}
-                onPress={() => setPicker({ field: "start", mode: "time" })}
-              >
-                <Text style={styles.scheduleLabel}>Time</Text>
-                <Text style={styles.scheduleValue}>
-                  {startAt.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalLabel}>End date and time</Text>
-            <View style={styles.scheduleGrid}>
-              <TouchableOpacity
-                style={styles.scheduleButton}
-                onPress={() => setPicker({ field: "end", mode: "date" })}
-              >
-                <Text style={styles.scheduleLabel}>Date</Text>
-                <Text style={styles.scheduleValue}>
-                  {endAt.toLocaleDateString()}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.scheduleButton}
-                onPress={() => setPicker({ field: "end", mode: "time" })}
-              >
-                <Text style={styles.scheduleLabel}>Time</Text>
-                <Text style={styles.scheduleValue}>
-                  {endAt.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.hint}>
-              Start is when daily check-ins begin. End is the final cutoff for
-              scoring the duel.
-            </Text>
-            <View style={styles.actionStack}>
-              <GateButton
-                label={createLoading ? "Forging..." : "Create Invite"}
-                onPress={handleCreateInvite}
-                disabled={createLoading}
-              />
-              <GateButton
-                label="Close"
-                variant="ghost"
-                onPress={() => setShowCreateModal(false)}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <AnimatedSheet
+        visible={sheetMode === "create"}
+        onClose={() => {
+          if (createLoading) return;
+          setSheetMode(null);
+        }}
+      >
+        <View style={styles.sheetHandle} />
+        <Text style={styles.sheetTitle}>Create Duel</Text>
 
-      {picker ? (
-        <DateTimePicker
-          value={picker.field === "start" ? startAt : endAt}
-          mode={picker.mode}
-          display={Platform.OS === "ios" ? "spinner" : "default"}
-          minimumDate={
-            picker.field === "start" ? new Date(Date.now() + 60_000) : startAt
-          }
-          onChange={handlePickerChange}
+        <Text style={styles.inputLabel}>Stake Amount</Text>
+        <TextInput
+          value={stakeInput}
+          onChangeText={setStakeInput}
+          placeholder="0.5 SOL"
+          placeholderTextColor={COLORS.dim}
+          keyboardType="decimal-pad"
+          style={styles.input}
         />
-      ) : null}
+        <View style={styles.chipGroup}>
+          {QUICK_STAKES.map((value) => (
+            <Chip
+              key={value}
+              label={`${value} SOL`}
+              selected={Number(stakeInput) === value}
+              onPress={() => setStakeInput(String(value))}
+            />
+          ))}
+        </View>
 
-      <Modal transparent visible={showContractModal} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Join Contract</Text>
-            <Text style={styles.contractText}>
-              Stake joins on-chain. Daily proof stays off-chain. Once resolved,
-              settlement moves the final split.
-            </Text>
-            <TouchableOpacity
-              style={styles.checkRow}
-              onPress={() => setReadChecked((v) => !v)}
-            >
-              <View
-                style={[styles.checkBox, readChecked && styles.checkBoxActive]}
-              />
-              <Text style={styles.checkText}>
-                I understand the duel flow and accept the stake rules.
-              </Text>
-            </TouchableOpacity>
-            <View style={styles.actionStack}>
-              <GateButton
-                label={joinInviteLoading ? "Joining..." : "Join Gate"}
-                onPress={handleJoinInvite}
-                disabled={!readChecked || !canJoinInvite || joinInviteLoading}
-              />
-              <GateButton
-                label="Back"
-                variant="ghost"
-                onPress={() => setShowContractModal(false)}
-              />
-            </View>
+        <Text style={styles.inputLabel}>Duration</Text>
+        <View style={styles.chipGroup}>
+          {DURATION_OPTIONS.map((value) => (
+            <Chip
+              key={value}
+              label={`${value} Days`}
+              selected={durationDays === value}
+              onPress={() => setDurationDays(value)}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.inputLabel}>Title (optional)</Text>
+        <TextInput
+          value={duelTitle}
+          onChangeText={setDuelTitle}
+          placeholder="No Sugar Sprint"
+          placeholderTextColor={COLORS.dim}
+          style={styles.input}
+        />
+
+        <Text style={styles.inputLabel}>Mission (optional)</Text>
+        <TextInput
+          value={duelDescription}
+          onChangeText={setDuelDescription}
+          placeholder="What both players are trying to do and why it matters"
+          placeholderTextColor={COLORS.dim}
+          multiline
+          style={[styles.input, styles.textarea]}
+        />
+
+        <View style={styles.previewCard}>
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>You Win (70%)</Text>
+            <Text style={[styles.previewValue, { color: COLORS.green }]}>{winTake} SOL</Text>
+          </View>
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>Loser Vault (25%)</Text>
+            <Text style={[styles.previewValue, { color: COLORS.red }]}>{vaultTake} SOL</Text>
+          </View>
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>Starts</Text>
+            <Text style={styles.previewSubtle}>1 hour after create</Text>
           </View>
         </View>
-      </Modal>
+
+        <TouchableOpacity
+          style={[styles.sheetPrimary, createLoading && styles.buttonDisabled]}
+          onPress={() => void handleCreateInvite()}
+          disabled={createLoading}
+        >
+          <Text style={styles.sheetPrimaryText}>{createLoading ? "Creating..." : "Create & Lock"}</Text>
+        </TouchableOpacity>
+      </AnimatedSheet>
+
+      <AnimatedSheet
+        visible={sheetMode === "join"}
+        onClose={() => {
+          if (joinInviteLoading) return;
+          setSheetMode(null);
+        }}
+      >
+        <View style={styles.sheetHandle} />
+        <Text style={styles.sheetTitle}>Join Duel</Text>
+
+        <Text style={styles.inputLabel}>Invite Code</Text>
+        <TextInput
+          value={manualDuelId}
+          onChangeText={setManualDuelId}
+          placeholder="Enter duel id from shared link"
+          placeholderTextColor={COLORS.dim}
+          autoCapitalize="none"
+          style={styles.input}
+        />
+
+        {inviteDuel ? (
+          <View style={styles.joinPreviewCard}>
+            <View style={styles.joinPreviewTop}>
+              <View style={styles.joinAvatarStack}>
+                <CharacterAvatar
+                  characterId={inviteDuel.player1User?.selectedCharacter}
+                  label={inviteDuel.player1User?.username}
+                  size={44}
+                />
+                <CharacterAvatar
+                  characterId={inviteDuel.player2User?.selectedCharacter ?? user.selectedCharacter}
+                  label={inviteDuel.player2User?.username ?? user.username}
+                  size={44}
+                />
+              </View>
+              <StatusPill status={inviteDuel.status} />
+            </View>
+            <Text style={styles.joinPreviewTitle}>{getDuelTitle(inviteDuel)}</Text>
+            <Text style={styles.joinPreviewCopy}>{getDuelDescription(inviteDuel)}</Text>
+            <View style={styles.joinMetaRow}>
+              <MiniMeta label="Creator" value={getParticipantLabel(inviteDuel, "player1")} />
+              <MiniMeta label="Stake" value={`${inviteDuel.stakeAmount} SOL`} />
+              <MiniMeta label="Start" value={formatStartTime(inviteDuel.startTime)} />
+            </View>
+          </View>
+        ) : hasInviteInput ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Invite lookup</Text>
+            <Text style={styles.emptyCopy}>
+              {hasValidInviteFormat
+                ? "No duel found for that id yet."
+                : "That duel id format looks invalid."}
+            </Text>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.checkRow}
+          onPress={() => setReadChecked((value) => !value)}
+        >
+          <View style={[styles.checkbox, readChecked && styles.checkboxActive]} />
+          <Text style={styles.checkText}>I understand the duel flow and accept the stake rules.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.sheetPrimary,
+            (!readChecked || !canJoinInvite || joinInviteLoading) && styles.buttonDisabled,
+          ]}
+          onPress={() => void handleJoinInvite()}
+          disabled={!readChecked || !canJoinInvite || joinInviteLoading}
+        >
+          <Text style={styles.sheetPrimaryText}>
+            {joinInviteLoading ? "Joining..." : "Join & Lock Stake"}
+          </Text>
+        </TouchableOpacity>
+      </AnimatedSheet>
 
       <FeedbackModal
         visible={feedback.visible}
@@ -674,98 +642,151 @@ export default function DuelHubScreen() {
   );
 }
 
-function Section({
-  title,
-  emptyText,
-  children,
+function ArenaBackground({
+  meshStyle,
 }: {
-  title: string;
-  emptyText: string;
-  children: ReactNode;
+  meshStyle: ReturnType<typeof useAnimatedStyle>;
 }) {
-  const count = Array.isArray(children) ? children.length : children ? 1 : 0;
   return (
-    <SystemWindow>
-      <Text style={styles.sectionLabel}>{title}</Text>
-      {count === 0 ? (
-        <Text style={styles.empty}>{emptyText}</Text>
-      ) : (
-        <View style={styles.list}>{children}</View>
-      )}
-    </SystemWindow>
+    <>
+      <Animated.View style={[styles.bgMesh, meshStyle]} />
+      <View style={styles.bgNoise} />
+      <View style={styles.particles}>
+        {PARTICLES.map((index) => (
+          <Particle key={index} index={index} />
+        ))}
+      </View>
+    </>
   );
 }
 
-function DuelCard({
+function Particle({ index }: { index: number }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withRepeat(
+      withTiming(1, {
+        duration: 9000 + index * 500,
+        easing: Easing.linear,
+      }),
+      -1,
+      false,
+    );
+  }, [index, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.1, 0.9, 1], [0, 0.35, 0.35, 0]),
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [680, -80]) },
+      { scale: interpolate(progress.value, [0, 1], [0.4, 1.1]) },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.particle,
+        style,
+        {
+          left: `${10 + index * 12}%`,
+          backgroundColor: index % 2 === 0 ? COLORS.orange : COLORS.green,
+        },
+      ]}
+    />
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={styles.sectionCard}>
+      <Text style={styles.sectionHeader}>{title}</Text>
+      <View style={styles.sectionList}>{children}</View>
+    </View>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <Text style={styles.emptyInline}>{text}</Text>;
+}
+
+function DuelListItem({
   duel,
-  onPrimaryLabel,
-  onPrimaryPress,
-  onSecondaryLabel,
-  onSecondaryPress,
-  compact,
+  onPress,
+  footer,
+  delay,
+  resolved,
 }: {
   duel: DuelWithParticipants;
-  onPrimaryLabel: string;
-  onPrimaryPress: () => void;
-  onSecondaryLabel?: string;
-  onSecondaryPress?: () => void;
-  compact?: boolean;
+  onPress?: () => void;
+  footer?: ReactNode;
+  delay: number;
+  resolved?: boolean;
 }) {
-  const statusTone =
+  const currentCharacter =
+    duel.player1User?.selectedCharacter ?? duel.player2User?.selectedCharacter;
+
+  const statusText =
     duel.status === "ACTIVE"
-      ? styles.statusActive
+      ? `Active • ${getEndsLabel(duel.endTime)}`
       : duel.status === "OPEN"
-        ? styles.statusOpen
-        : styles.statusMuted;
+        ? `Open • ${getStartsLabel(duel.startTime)}`
+        : formatResolvedCopy(duel);
 
   return (
-    <View style={[styles.card, compact && styles.compactCard]}>
-      <View style={styles.rowBetween}>
-        <Text style={styles.cardTitle}>{getDuelTitle(duel)}</Text>
-        <View style={styles.statusBadge}>
-          <Text style={[styles.status, statusTone]}>{formatDuelStatus(duel.status as any)}</Text>
+    <Animated.View entering={FadeInDown.duration(420).delay(delay * 40)}>
+      <TouchableOpacity
+        style={[styles.duelListItem, resolved && styles.duelListItemResolved]}
+        onPress={onPress}
+        disabled={!onPress}
+      >
+        <View style={styles.duelInfo}>
+          <CharacterAvatar characterId={currentCharacter} label={duel.player1User?.username} size={48} />
+          <View style={styles.duelMeta}>
+            <Text style={styles.duelTitle}>{formatListTitle(duel)}</Text>
+            <Text style={[styles.duelSub, resolved && styles.duelSubResolved]}>{statusText}</Text>
+          </View>
         </View>
-      </View>
-      <Text style={styles.cardDescription}>{getDuelDescription(duel)}</Text>
-      <View style={styles.cardStats}>
-        <InviteStat label="Stake" value={`${duel.stakeAmount} SOL`} />
-        <InviteStat label="Creator" value={getParticipantLabel(duel, "player1")} />
-        <InviteStat label="Rival" value={getParticipantLabel(duel, "player2")} />
-        <InviteStat label="Start" value={formatStartTime(duel.startTime)} />
-      </View>
-      <Text style={styles.meta}>End: {formatStartTime(duel.endTime)}</Text>
-      <Text style={styles.meta}>Duel ID: {String(duel._id)}</Text>
-      <View style={styles.inlineActions}>
-        <TouchableOpacity onPress={onPrimaryPress} style={styles.inlineButton}>
-          <Text style={styles.inlineButtonText}>{onPrimaryLabel}</Text>
-        </TouchableOpacity>
-        {onSecondaryLabel && onSecondaryPress ? (
-          <TouchableOpacity
-            onPress={onSecondaryPress}
-            style={styles.inlineButtonDanger}
-          >
-            <Text style={styles.inlineButtonText}>{onSecondaryLabel}</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+        <View style={[styles.duelBadge, resolved && styles.duelBadgeResolved]}>
+          <Text style={[styles.duelBadgeText, resolved && styles.duelBadgeResolvedText]}>
+            {resolved ? formatResolvedTag(duel) : duel.stakeAmount}
+          </Text>
+        </View>
+      </TouchableOpacity>
+      {footer}
+    </Animated.View>
+  );
+}
+
+function HeroStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.heroStatCard}>
+      <Text style={styles.heroStatValue}>{value}</Text>
+      <Text style={styles.heroStatLabel}>{label}</Text>
     </View>
   );
 }
 
-function HeroMetric({ label, value }: { label: string; value: string }) {
+function StatusPill({ status }: { status: string }) {
+  const color =
+    status === "ACTIVE"
+      ? COLORS.green
+      : status === "OPEN"
+        ? COLORS.orange
+        : status === "RESOLVED" || status === "COMPLETED"
+          ? COLORS.red
+          : COLORS.dim;
   return (
-    <View style={styles.heroMetricCard}>
-      <Text style={styles.heroMetricValue}>{value}</Text>
-      <Text style={styles.heroMetricLabel}>{label}</Text>
+    <View style={[styles.statusPill, { borderColor: `${color}55` }]}>
+      <Text style={[styles.statusPillText, { color }]}>{formatDuelStatus(status as any)}</Text>
     </View>
   );
 }
 
-function InviteStat({ label, value }: { label: string; value: string }) {
+function MiniMeta({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.inviteStatCard}>
-      <Text style={styles.inviteStatLabel}>{label}</Text>
-      <Text style={styles.inviteStatValue}>{value}</Text>
+    <View style={styles.miniMeta}>
+      <Text style={styles.miniMetaValue} numberOfLines={1}>{value}</Text>
+      <Text style={styles.miniMetaLabel}>{label}</Text>
     </View>
   );
 }
@@ -781,334 +802,638 @@ function Chip({
 }) {
   return (
     <TouchableOpacity
+      style={[styles.chip, selected && styles.chipActive]}
       onPress={onPress}
-      style={[styles.chip, selected && styles.chipSelected]}
     >
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-        {label}
-      </Text>
+      <Text style={[styles.chipText, selected && styles.chipTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
+function AnimatedSheet({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, {
+      duration: visible ? 280 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [progress, visible]);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(progress.value, [0, 1], [120, 0]) }],
+    opacity: progress.value,
+  }));
+
+  if (!visible) return null;
+
+  return (
+    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
+      <Animated.View style={[styles.modalBackdrop, backdropStyle]}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <Animated.View style={[styles.modalSheet, sheetStyle]}>
+          <ScrollView
+            bounces={false}
+            contentContainerStyle={styles.modalContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+function formatListTitle(duel: DuelWithParticipants) {
+  const p1 = duel.player1User?.username ?? "You";
+  const p2 = duel.player2User?.username ?? "Waiting";
+  return `${p1} vs ${p2}`;
+}
+
+function getEndsLabel(timestamp?: number) {
+  if (!timestamp) return "Ends soon";
+  const diff = timestamp - Date.now();
+  if (diff <= 0) return "Ended";
+  const days = Math.floor(diff / DAY_MS);
+  return days > 0 ? `Ends in ${days}d` : "Ends today";
+}
+
+function getStartsLabel(timestamp?: number) {
+  if (!timestamp) return "Start pending";
+  const diff = timestamp - Date.now();
+  if (diff <= 0) return "Starts now";
+  const hours = Math.max(1, Math.floor(diff / HOUR_MS));
+  return `Starts in ${hours}h`;
+}
+
+function formatResolvedTag(duel: DuelWithParticipants) {
+  if (duel.status === "CANCELLED") return "VOID";
+  if (duel.winner === duel.player1 || duel.winner === duel.player2) return "DONE";
+  return "END";
+}
+
+function formatResolvedCopy(duel: DuelWithParticipants) {
+  if (duel.status === "CANCELLED") return "Cancelled before activation";
+  return duel.winner ? "Resolved duel record" : "Completed duel";
+}
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: C.bg },
-  scroll: { padding: 16, gap: 14, paddingBottom: 44 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+  bgMesh: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.bg,
+  },
+  bgNoise: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.015)",
+  },
+  particles: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
+  },
+  particle: {
+    position: "absolute",
+    width: 4,
+    height: 4,
+    borderRadius: 999,
+  },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
   },
-  header: {
-    fontFamily: "monospace",
-    fontSize: 13,
-    letterSpacing: 2,
-    color: C.mana,
-    textTransform: "uppercase",
-  },
-  sub: {
-    color: C.slate500,
-    marginTop: 8,
-    fontFamily: "monospace",
-    fontSize: 11,
-    textTransform: "uppercase",
+  lockTitle: {
+    color: COLORS.text,
+    fontSize: 24,
+    fontWeight: "800",
     textAlign: "center",
   },
-  heroWindow: {
-    overflow: "hidden",
-    borderColor: C.manaBorder,
-    backgroundColor: "rgba(42,20,8,0.96)",
+  lockCopy: {
+    marginTop: 8,
+    color: COLORS.muted,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
   },
-  heroGlow: {
-    position: "absolute",
-    top: -28,
-    right: -36,
-    width: 170,
-    height: 170,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,138,31,0.16)",
+  scroll: {
+    padding: 16,
+    paddingBottom: 44,
+    gap: 14,
   },
-  heroGlowSecondary: {
-    position: "absolute",
-    left: -28,
-    bottom: -36,
-    width: 140,
-    height: 140,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,183,3,0.12)",
+  heroCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 18,
   },
-  rowBetween: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  heroEyebrow: {
-    color: C.slate400,
-    fontFamily: "monospace",
+  sectionTitle: {
+    color: COLORS.muted,
     fontSize: 11,
-    letterSpacing: 1,
+    fontWeight: "800",
     textTransform: "uppercase",
-    marginBottom: 6,
+    letterSpacing: 1.2,
   },
   heroTitle: {
-    color: C.white,
+    marginTop: 8,
+    color: COLORS.text,
     fontSize: 28,
-    lineHeight: 34,
     fontWeight: "800",
-    marginBottom: 10,
   },
-  heroText: {
-    color: C.slate400,
+  heroCopy: {
+    marginTop: 8,
+    color: COLORS.muted,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 22,
   },
-  heroActionRow: {
-    marginTop: 16,
+  ctaRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
   },
-  heroMetrics: {
+  primaryCta: {
+    flex: 1,
+    backgroundColor: COLORS.orange,
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryCta: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryCtaText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+  },
+  secondaryCtaText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+  },
+  heroStats: {
     flexDirection: "row",
     gap: 10,
     marginTop: 18,
   },
-  heroMetricCard: {
+  heroStatCard: {
     flex: 1,
-    minHeight: 74,
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderRadius: 18,
-    padding: 14,
-    backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    justifyContent: "space-between",
+    borderColor: COLORS.borderSoft,
+    padding: 12,
+    alignItems: "center",
   },
-  heroMetricValue: {
-    color: C.white,
-    fontSize: 24,
-    fontWeight: "800",
-    fontFamily: "monospace",
-  },
-  heroMetricLabel: {
-    color: C.slate500,
-    fontSize: 10,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  lookupWindow: {
-    borderColor: C.purpleBorder,
-    backgroundColor: "rgba(255,179,71,0.08)",
-  },
-  inviteWindow: {
-    borderColor: C.success,
-    backgroundColor: "rgba(255,210,111,0.08)",
-  },
-  inviteTitle: {
-    color: C.white,
+  heroStatValue: {
+    color: COLORS.orange,
     fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 8,
+    fontWeight: "900",
   },
-  inviteStats: {
+  heroStatLabel: {
+    marginTop: 4,
+    color: COLORS.dim,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+  },
+  featureCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 18,
+  },
+  featureEyebrow: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  featureHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 10,
+  },
+  featureTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  featureText: {
+    marginTop: 6,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    maxWidth: 240,
+  },
+  featureMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    marginVertical: 14,
+    marginTop: 14,
   },
-  inviteStatCard: {
-    minWidth: "47%",
-    flexGrow: 1,
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-  },
-  inviteStatLabel: {
-    color: C.slate500,
-    fontSize: 10,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
-  inviteStatValue: {
-    color: C.white,
-    fontSize: 13,
-    lineHeight: 18,
+  featureMeta: {
+    color: COLORS.dim,
+    fontSize: 11,
     fontWeight: "700",
-  },
-  sectionLabel: {
-    fontFamily: "monospace",
-    fontSize: 10,
-    color: C.mana,
-    letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 10,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    color: C.white,
+  primaryInlineButton: {
+    marginTop: 16,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,107,53,0.14)",
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-  },
-  textarea: {
-    minHeight: 92,
-    textAlignVertical: "top",
-  },
-  scheduleGrid: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 6,
-  },
-  scheduleButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    padding: 12,
-    gap: 4,
-  },
-  scheduleLabel: {
-    color: C.slate500,
-    fontFamily: "monospace",
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  scheduleValue: {
-    color: C.white,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "600",
-  },
-  hint: { color: C.slate500, fontSize: 12, lineHeight: 18, marginTop: 10 },
-  meta: { color: C.slate400, fontSize: 12, lineHeight: 18 },
-  list: { gap: 10 },
-  empty: { color: C.slate600, fontStyle: "italic", fontSize: 12 },
-  card: {
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 20,
-    padding: 16,
-    gap: 10,
-  },
-  compactCard: { opacity: 0.82 },
-  cardTitle: {
-    color: C.white,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "800",
-  },
-  cardDescription: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  cardStats: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-  },
-  status: {
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  statusActive: { color: C.success },
-  statusOpen: { color: C.mana },
-  statusMuted: { color: C.slate400 },
-  inlineActions: { flexDirection: "row", gap: 8, marginTop: 4 },
-  inlineButton: {
-    borderWidth: 1,
-    borderColor: C.manaBorder,
-    backgroundColor: C.manaDim,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-  },
-  inlineButtonDanger: {
-    borderWidth: 1,
-    borderColor: "rgba(255,107,26,0.4)",
-    backgroundColor: "rgba(255,107,26,0.12)",
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-  },
-  inlineButtonText: {
-    color: C.white,
-    fontFamily: "monospace",
-    fontSize: 10,
-    textTransform: "uppercase",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(11,6,3,0.88)",
-    justifyContent: "center",
-    padding: 18,
-  },
-  modalCard: {
-    backgroundColor: "rgba(35,19,9,0.98)",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.manaBorder,
-    padding: 18,
-    gap: 10,
-  },
-  modalTitle: { color: C.white, fontSize: 22, fontWeight: "800" },
-  modalLabel: {
-    color: C.slate400,
-    fontSize: 11,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 6 },
-  chip: {
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    borderRadius: 999,
     paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: "rgba(255,255,255,0.03)",
   },
-  chipSelected: { borderColor: C.mana, backgroundColor: C.manaDim },
-  chipText: {
-    color: C.slate400,
-    fontFamily: "monospace",
-    fontSize: 11,
+  primaryInlineText: {
+    color: COLORS.orange,
+    fontWeight: "900",
+    fontSize: 12,
     textTransform: "uppercase",
+    letterSpacing: 1.1,
   },
-  chipTextSelected: { color: C.white },
-  contractText: { color: C.slate400, fontSize: 13, lineHeight: 20 },
-  checkRow: {
+  buttonDisabled: {
+    opacity: 0.45,
+  },
+  statusPill: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+  },
+  sectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 16,
+  },
+  sectionHeader: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 12,
+  },
+  sectionList: {
+    gap: 10,
+  },
+  emptyInline: {
+    color: COLORS.muted,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  duelListItem: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: COLORS.borderSoft,
+    borderRadius: 18,
+  },
+  duelListItemResolved: {
+    opacity: 0.72,
+  },
+  duelInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    flex: 1,
+  },
+  duelMeta: {
+    flex: 1,
+  },
+  duelTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  duelSub: {
+    marginTop: 4,
+    color: COLORS.muted,
+    fontSize: 12,
+  },
+  duelSubResolved: {
+    color: COLORS.dim,
+  },
+  duelBadge: {
+    minWidth: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: "rgba(255,107,53,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255,107,53,0.22)",
+  },
+  duelBadgeResolved: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: COLORS.borderSoft,
+  },
+  duelBadgeText: {
+    color: COLORS.orange,
+    fontWeight: "900",
+    fontSize: 13,
+  },
+  duelBadgeResolvedText: {
+    color: COLORS.text,
+  },
+  itemFooter: {
+    flexDirection: "row",
     gap: 8,
     marginTop: 8,
   },
-  checkBox: {
-    width: 20,
-    height: 20,
+  inlineGhost: {
+    flex: 1,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: C.slate500,
-    borderRadius: 5,
+    borderColor: COLORS.border,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    paddingVertical: 12,
+    alignItems: "center",
   },
-  checkBoxActive: { borderColor: C.mana, backgroundColor: C.mana },
-  checkText: { flex: 1, color: C.slate400, fontSize: 12, lineHeight: 18 },
-  actionStack: { gap: 10, marginTop: 8 },
+  inlineGhostText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  inlineDanger: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,59,92,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255,59,92,0.22)",
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  inlineDangerText: {
+    color: COLORS.red,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  emptyCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.borderSoft,
+    padding: 16,
+  },
+  emptyTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  emptyCopy: {
+    marginTop: 6,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(3,3,4,0.7)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    maxHeight: "90%",
+    backgroundColor: "rgba(8,8,12,0.98)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalContent: {
+    padding: 18,
+    paddingBottom: 34,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 44,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    color: COLORS.text,
+    fontSize: 24,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  inputLabel: {
+    color: COLORS.dim,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    color: COLORS.text,
+    fontSize: 14,
+    marginBottom: 14,
+  },
+  textarea: {
+    minHeight: 96,
+    textAlignVertical: "top",
+  },
+  chipGroup: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  chip: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  chipActive: {
+    backgroundColor: "rgba(255,107,53,0.14)",
+    borderColor: "rgba(255,107,53,0.22)",
+  },
+  chipText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  chipTextActive: {
+    color: COLORS.text,
+  },
+  previewCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.borderSoft,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  previewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  previewLabel: {
+    color: COLORS.muted,
+    fontSize: 12,
+  },
+  previewValue: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  previewSubtle: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  sheetPrimary: {
+    backgroundColor: COLORS.orange,
+    borderRadius: 18,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetPrimaryText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+  },
+  joinPreviewCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.borderSoft,
+    padding: 16,
+    marginBottom: 16,
+  },
+  joinPreviewTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  joinAvatarStack: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  joinPreviewTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  joinPreviewCopy: {
+    marginTop: 6,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  joinMetaRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
+  miniMeta: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 14,
+    padding: 10,
+  },
+  miniMetaValue: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  miniMetaLabel: {
+    marginTop: 4,
+    color: COLORS.dim,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  checkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 16,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  checkboxActive: {
+    backgroundColor: COLORS.green,
+    borderColor: COLORS.green,
+  },
+  checkText: {
+    flex: 1,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
 });

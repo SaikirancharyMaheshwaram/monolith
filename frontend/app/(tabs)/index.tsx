@@ -1,3 +1,4 @@
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { ConnectButton } from "@/components/ConnectButton";
 import { GateButton } from "@/components/GateButton";
 import { ProgressBar } from "@/components/ProgressBar";
@@ -21,7 +22,6 @@ import { useQuery } from "convex/react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -79,7 +79,7 @@ export default function HomeScreen() {
   const [showRegistration, setShowRegistration] = useState(false);
   const [usernameInput, setUsernameInput] = useState("");
   const [selectedCharacter, setSelectedCharacter] =
-    useState<CharacterId>("warrior");
+    useState<CharacterId>("samurai");
 
   const [showArenaModal, setShowArenaModal] = useState(false);
   const [stake, setStake] = useState(STAKES[2]);
@@ -443,7 +443,7 @@ export default function HomeScreen() {
                     style={[styles.characterCard, selected && styles.characterCardSelected]}
                     onPress={() => setSelectedCharacter(ch.id)}
                   >
-                    <Image source={ch.image} style={styles.characterImage} />
+                    <CharacterAvatar characterId={ch.id} label={ch.name} size={72} />
                     <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
                       {ch.name}
                     </Text>
@@ -901,12 +901,6 @@ const styles = StyleSheet.create({
   characterCardSelected: {
     borderColor: C.mana,
     backgroundColor: C.manaDim,
-  },
-  characterImage: {
-    width: "100%",
-    height: 72,
-    borderRadius: 10,
-    marginBottom: 6,
   },
   chipRow: {
     flexDirection: "row",
