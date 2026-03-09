@@ -40,9 +40,9 @@ export const joinFriendDuel = mutation({
       throw new Error("Player not found");
     }
 
-    if (player1.activeDuelCount >= 3 || player2.activeDuelCount >= 3) {
-      throw new Error("Duel limit reached");
-    }
+    // if (player1.activeDuelCount >= 3 || player2.activeDuelCount >= 3) {
+    //   throw new Error("Duel limit reached");
+    // }
 
     await ctx.db.patch(args.duelId, {
       player2: args.player2,

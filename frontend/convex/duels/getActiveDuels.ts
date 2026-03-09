@@ -1,5 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
+import { enrichDuels } from "./helpers";
 
 export const getActiveDuels = query({
   args: {
@@ -19,6 +20,9 @@ export const getActiveDuels = query({
 
     const all = [...duels1, ...duels2];
 
-    return all.filter((d) => d.status === "ACTIVE");
+    return enrichDuels(
+      ctx,
+      all.filter((d) => d.status === "ACTIVE"),
+    );
   },
 });

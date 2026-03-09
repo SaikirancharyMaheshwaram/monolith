@@ -1,5 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
+import { enrichDuels } from "./helpers";
 
 export const getUserDuels = query({
   args: {
@@ -17,6 +18,6 @@ export const getUserDuels = query({
       .withIndex("by_player2", (q) => q.eq("player2", args.userId))
       .collect();
 
-    return [...duelsAsPlayer1, ...duelsAsPlayer2];
+    return enrichDuels(ctx, [...duelsAsPlayer1, ...duelsAsPlayer2]);
   },
 });

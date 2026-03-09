@@ -29,16 +29,6 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="landing"
-        options={{
-          title: "Brief",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="chevron.left.forwardslash.chevron.right" color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
         name="index"
         options={{
           title: "Lobby",
@@ -53,21 +43,27 @@ export default function TabLayout() {
         options={{
           title: "Duels",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="shield.lefthalf.filled" color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="battle"
-        options={{
-          title: "Battle",
-          tabBarIcon: ({ color }) => (
             <IconSymbol size={22} name="bolt.fill" color={color} />
           ),
         }}
       />
 
+      <Tabs.Screen
+        name="duel/[duelId]"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="vault"
+        options={{
+          title: "Vault",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={22} name="shield.fill" color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="profile"
         options={{
@@ -75,13 +71,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <IconSymbol size={22} name="person.fill" color={color} />
           ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="explore"
-        options={{
-          href: null,
         }}
       />
     </Tabs>

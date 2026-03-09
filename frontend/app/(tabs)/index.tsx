@@ -1,22 +1,23 @@
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { ConnectButton } from "@/components/ConnectButton";
 import { GateButton } from "@/components/GateButton";
-import { ProgressBar } from "@/components/ProgressBar";
-import { QuestCard } from "@/components/QuestCard";
-import { StatBlock } from "@/components/StatBlock";
-import { SystemWindow } from "@/components/SystemWindow";
-import { CHARACTER_OPTIONS, CharacterId } from "@/components/characters";
+import {
+  CHARACTER_OPTIONS,
+  CharacterId,
+  resolveCharacterOption,
+} from "@/components/characters";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { getParticipantLabel, toDuelId } from "@/lib/duel-view";
 import { useWallet } from "@/lib/use-wallet";
 import { useArenaStore } from "@/stores/arenaStore";
 import { useDuelStore } from "@/stores/duelStore";
 import { useUserStore } from "@/stores/userStore";
 import { useQuery } from "convex/react";
+import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -25,26 +26,24 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  FadeInDown,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const STAKES = [0.1, 0.5, 1, 2];
 const START_DELAY_OPTIONS = [10, 30, 60];
-const STORY_STEPS = [
-  { title: "Create", detail: "1 SOL moves into escrow and the duel waits for an opponent." },
-  { title: "Join", detail: "Escrow reaches 2 SOL and the backend flips the duel to active." },
-  { title: "Check-in", detail: "Daily proof stays off-chain so streak tracking feels instant." },
-  { title: "Settle", detail: "When the backend resolves the winner, the contract pays the final split." },
-];
-const LIVE_FEED = [
-  "Escrow creates real pressure for both players.",
-  "Daily proof is fast because the blockchain stays untouched during check-ins.",
-  "Settlement is only enabled after the duel is resolved.",
-];
-const MISSION_BOARD = [
-  { title: "Create duel", status: "READY" },
-  { title: "Hit daily streak", status: "TRACKED" },
-  { title: "Settle winner", status: "LOCKED" },
-];
+const HOW_IT_WORKS =
+  "Strivioz uses blockchain transparency to enforce habit streaks. Two players stake SOL. The winner takes 70%, the loser's 25% is locked in a vault. Treasury takes 5%.";
+const APP_LOGO_URI =
+  "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%20100%20100%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22pg1%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23f56565%22/%3E%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23ed8936%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2238%22%20fill%3D%22url(%23pg1)%22/%3E%3Cpath%20d%3D%22M50%2010%20L45%2030%20L55%2030%20Z%22%20fill%3D%22%23fbd38d%22/%3E%3Cpath%20d%3D%22M40%2015%20L42%2032%20L48%2030%20Z%22%20fill%3D%22%23f6ad55%22/%3E%3Cpath%20d%3D%22M60%2015%20L58%2032%20L52%2030%20Z%22%20fill%3D%22%23f6ad55%22/%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2255%22%20r%3D%2220%22%20fill%3D%22%23fef3c7%22/%3E%3Ccircle%20cx%3D%2242%22%20cy%3D%2252%22%20r%3D%223%22%20fill%3D%22%23333%22/%3E%3Ccircle%20cx%3D%2258%22%20cy%3D%2252%22%20r%3D%223%22%20fill%3D%22%23333%22/%3E%3C/svg%3E";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -74,17 +73,16 @@ export default function HomeScreen() {
   const [showRegistration, setShowRegistration] = useState(false);
   const [usernameInput, setUsernameInput] = useState("");
   const [selectedCharacter, setSelectedCharacter] =
-    useState<CharacterId>("warrior");
+    useState<CharacterId>("samurai");
 
   const [showArenaModal, setShowArenaModal] = useState(false);
   const [stake, setStake] = useState(STAKES[2]);
   const [startDelayMins, setStartDelayMins] = useState(START_DELAY_OPTIONS[0]);
+  const [duelTitle, setDuelTitle] = useState("");
+  const [duelDescription, setDuelDescription] = useState("");
   const [arenaMessage, setArenaMessage] = useState<string | null>(null);
-  const [scanProgress, setScanProgress] = useState(0);
-  const [scanning, setScanning] = useState(false);
 
-  const inviteDuelId =
-    typeof params.duelId === "string" ? (params.duelId as Id<"duels">) : "";
+  const inviteDuelId = toDuelId(params.duelId);
   const inviteDuel = useQuery(
     api.duels.getDuelById.getDuelById,
     inviteDuelId ? { id: inviteDuelId } : "skip",
@@ -92,15 +90,45 @@ export default function HomeScreen() {
   const [showInviteModal, setShowInviteModal] = useState(Boolean(inviteDuelId));
 
   const walletAddress = wallet.publicKey?.toBase58() ?? "";
-
   const activeDuel = activeDuels[0] ?? null;
+  const invalidInviteLink =
+    typeof params.duelId === "string" && !toDuelId(params.duelId);
   const activeDuelEntry = activeDuel ? duelMap[activeDuel._id] : undefined;
   const duelProgressDays = useMemo(() => {
     if (!activeDuel || !activeDuelEntry?.progress || !user) return 0;
     const progress = activeDuelEntry.progress;
-    const mine = progress.player1 === user._id ? progress.p1Days : progress.p2Days;
+    const mine =
+      progress.player1 === user._id ? progress.p1Days : progress.p2Days;
     return new Set(mine).size;
   }, [activeDuel, activeDuelEntry, user]);
+
+  const homeRotate = useSharedValue(0);
+  const mascotFloat = useSharedValue(0);
+
+  useEffect(() => {
+    homeRotate.value = withRepeat(
+      withTiming(1, { duration: 30000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    mascotFloat.value = withRepeat(
+      withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+  }, [homeRotate, mascotFloat]);
+
+  const bgOrbStyle = useAnimatedStyle(() => ({
+    transform: [
+      { rotate: `${interpolate(homeRotate.value, [0, 1], [0, 360])}deg` },
+    ],
+  }));
+
+  const mascotStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(mascotFloat.value, [0, 1], [-8, 10]) },
+    ],
+  }));
 
   useEffect(() => {
     if (!wallet.connected || !walletAddress) {
@@ -109,7 +137,6 @@ export default function HomeScreen() {
     }
 
     let isMounted = true;
-
     const boot = async () => {
       const fetchedUser = await fetchUser(walletAddress);
       if (!isMounted) return;
@@ -127,38 +154,35 @@ export default function HomeScreen() {
     };
 
     void boot();
-
     return () => {
       isMounted = false;
     };
-  }, [wallet.connected, walletAddress, fetchActiveDuels, fetchOpenDuels, fetchUser]);
+  }, [
+    wallet.connected,
+    walletAddress,
+    fetchActiveDuels,
+    fetchOpenDuels,
+    fetchUser,
+  ]);
 
   useEffect(() => {
+    if (inviteDuelId) {
+      router.replace(
+        `/invite/duel/${encodeURIComponent(String(inviteDuelId))}` as any,
+      );
+      return;
+    }
     setShowInviteModal(Boolean(inviteDuelId));
-  }, [inviteDuelId]);
+  }, [inviteDuelId, router]);
 
-  useEffect(() => {
-    if (!scanning) return;
-
-    setScanProgress(0.1);
-    const timer = setInterval(() => {
-      setScanProgress((p) => {
-        if (p >= 1) {
-          clearInterval(timer);
-          return 1;
-        }
-        return Math.min(1, p + 0.1);
-      });
-    }, 220);
-
-    return () => clearInterval(timer);
-  }, [scanning]);
-
-  const isWalletDisconnected = !wallet.connected;
   const isNewPlayer = wallet.connected && !userLoading && !user;
   const hasActiveDuel = wallet.connected && !!user && !!activeDuel;
-  const isIdleHunter = wallet.connected && !!user && !activeDuel;
-  const levelLabel = user ? String(Math.floor(xp / 100) + 1).padStart(2, "0") : "00";
+  const levelLabel = user
+    ? String(Math.floor(xp / 100) + 1).padStart(2, "0")
+    : "00";
+  const showcaseCharacter = resolveCharacterOption(
+    user?.selectedCharacter ?? selectedCharacter,
+  );
 
   const handleRegister = async () => {
     if (!walletAddress || usernameInput.trim().length < 3) return;
@@ -180,35 +204,39 @@ export default function HomeScreen() {
     if (!walletAddress || !user) return;
 
     setArenaMessage(null);
-
     const startTime = Date.now() + startDelayMins * 60 * 1000;
     await createDuel({
       player1: walletAddress,
       stakeAmount: stake,
       startTime,
+      title: duelTitle.trim() || `Discipline Run • ${stake} SOL`,
+      description:
+        duelDescription.trim() ||
+        "A focused streak challenge with real escrow and daily proof.",
     });
 
     await fetchOpenDuels(user._id);
-    setArenaMessage("Challenge forged. Open the duel board to share the invite.");
+    setDuelTitle("");
+    setDuelDescription("");
+    setArenaMessage(
+      "Challenge forged. Open the duel board to share the invite.",
+    );
   };
 
   const handleJoinPublic = async () => {
     if (!user) return;
-
     const candidate = openDuels.find((duel) => duel.player1 !== user._id);
     if (!candidate) {
-      setScanning(true);
-      setArenaMessage("Scanning for a live rival...");
-      setTimeout(() => {
-        setScanning(false);
-        setArenaMessage("No live rival found yet. Try again in a bit.");
-      }, 2500);
+      setArenaMessage("No live rival found yet. Try again in a bit.");
       return;
     }
 
     await joinDuel(candidate._id, user._id);
     await fetchActiveDuels(user._id);
     setShowArenaModal(false);
+    router.push(
+      `/(tabs)/duel/${encodeURIComponent(String(candidate._id))}` as any,
+    );
   };
 
   const handleJoinInvite = async () => {
@@ -216,148 +244,217 @@ export default function HomeScreen() {
     await joinDuel(inviteDuel._id, user._id);
     await fetchActiveDuels(user._id);
     setShowInviteModal(false);
+    router.push(
+      `/(tabs)/duel/${encodeURIComponent(String(inviteDuel._id))}` as any,
+    );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <SystemWindow style={styles.heroWindow}>
-          <View style={styles.heroGlowLarge} />
-          <View style={styles.heroGlowSmall} />
+      <HomeBackground orbStyle={bgOrbStyle} />
 
-          <View style={styles.rowBetween}>
-            <View style={styles.heroHeaderCopy}>
-              <Text style={styles.sectionLabel}>Orange Arena</Text>
-              <Text style={styles.heroTitle}>Stake up. Check in daily. Win the duel.</Text>
-              <Text style={styles.heroSubtitle}>
-                Built for simple friend challenges where the money is on-chain, the streak loop is off-chain, and the settlement moment feels earned.
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topBar}>
+          <View style={styles.brandRow}>
+            <Text style={styles.brandText}>Strivioz</Text>
+          </View>
+          <ConnectButton
+            connected={wallet.connected}
+            connecting={wallet.connecting}
+            publicKey={wallet.publicKey?.toBase58() ?? null}
+            onConnect={wallet.connect}
+            onDisconnect={wallet.disconnect}
+          />
+        </View>
+
+        <Animated.View
+          entering={FadeInDown.duration(420)}
+          style={styles.heroSection}
+        >
+          <View style={styles.mascotShowcase}>
+            <Animated.View style={[styles.mascotRing, mascotStyle]} />
+            <Animated.View style={[styles.mascotRingInner, mascotStyle]} />
+            <Animated.View style={[styles.mascotGlow, mascotStyle]} />
+            <Animated.View style={[styles.mascotAvatar, mascotStyle]}>
+              <CharacterAvatar
+                characterId={showcaseCharacter.id}
+                label={showcaseCharacter.name}
+                size={110}
+              />
+            </Animated.View>
+          </View>
+
+          <View style={styles.heroTextBlock}>
+            <Text style={styles.heroTitle}>
+              Welcome to <Text style={styles.heroAccent}>Strivioz</Text>
+            </Text>
+            <Text style={styles.heroCopy}>
+              Stake SOL, build unbreakable habits, and dominate the arena.
+            </Text>
+          </View>
+        </Animated.View>
+
+        <Animated.View
+          entering={FadeInDown.duration(460).delay(40)}
+          style={styles.statsCard}
+        >
+          <View style={styles.statsHeader}>
+            <Text style={styles.statsLabel}>Your Stats</Text>
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>
+                {wallet.connected ? "Live" : "Offline"}
               </Text>
-            </View>
-            <View style={styles.heroLevelBadge}>
-              <Text style={styles.heroLevelValue}>LV {levelLabel}</Text>
-              <Text style={styles.heroLevelLabel}>hunter tier</Text>
             </View>
           </View>
 
-          <View style={styles.rowBetween}>
-            <Text style={styles.walletLabel}>Wallet status</Text>
-            <ConnectButton
-              connected={wallet.connected}
-              connecting={wallet.connecting}
-              publicKey={wallet.publicKey?.toBase58() ?? null}
-              onConnect={wallet.connect}
-              onDisconnect={wallet.disconnect}
+          <View style={styles.statsRow}>
+            <StatTile
+              value={String(user?.totalWins ?? 0)}
+              label="Wins"
+              accent={C.mana}
+              tone="orange"
+            />
+            <StatTile
+              value={vaultBalance.toFixed(1)}
+              label="SOL Earned"
+              accent={C.success}
+              tone="green"
             />
           </View>
 
-          {isWalletDisconnected ? (
-            <Text style={styles.systemOffline}>Connect wallet to unlock duels, streak tracking, and settlement.</Text>
-          ) : (
-            <View style={styles.statsGrid}>
-              <StatBlock
-                label="Player Rank"
-                value={tier || "ROOKIE"}
-                unit={username ? `@${username}` : "pending"}
-                valueColor={C.success}
-              />
-              <StatBlock
-                label="Vault Balance"
-                value={vaultBalance.toFixed(2)}
-                unit="SOL"
-                valueColor={C.purple}
-              />
+          {wallet.connected ? (
+            <View style={styles.metaLine}>
+              <Text style={styles.metaText}>LV {levelLabel}</Text>
+              <Text style={styles.metaDivider}>•</Text>
+              <Text style={styles.metaText}>{tier || "Initiate"}</Text>
+              {username ? (
+                <>
+                  <Text style={styles.metaDivider}>•</Text>
+                  <Text style={styles.metaText}>@{username}</Text>
+                </>
+              ) : null}
             </View>
-          )}
-        </SystemWindow>
+          ) : null}
+        </Animated.View>
 
-        {isIdleHunter && (
-          <TouchableOpacity
-            style={styles.idleQuestBox}
-            activeOpacity={0.88}
-            onPress={() => setShowArenaModal(true)}
-          >
-            <Text style={styles.idleQuestBadge}>Arena Ready</Text>
-            <Text style={styles.idleQuestTitle}>No active duel yet.</Text>
-            <Text style={styles.idleQuestSub}>
-              Create a duel or auto-match into a public gate and start your streak.
+        {invalidInviteLink ? (
+          <View style={styles.noticeCard}>
+            <Text style={styles.noticeTitle}>Invite Link</Text>
+            <Text style={styles.noticeCopy}>
+              The duel link is invalid. Open the full shared URL again or paste
+              the exact duel id in the duel board.
             </Text>
+          </View>
+        ) : null}
+
+        {hasActiveDuel && activeDuel ? (
+          <Animated.View
+            entering={FadeInDown.duration(500).delay(80)}
+            style={styles.liveDuelCard}
+          >
+            <Text style={styles.sectionTitle}>Live Duel</Text>
+            {/*<Text style={styles.liveDuelTitle}>{getDuelTitle(activeDuel as any)}</Text>*/}
+            <Text style={styles.liveDuelCopy}>
+              Rival: {getParticipantLabel(activeDuel as any, "player2")} •{" "}
+              {duelProgressDays} days logged
+            </Text>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() =>
+                router.push(
+                  `/(tabs)/duel/${encodeURIComponent(String(activeDuel._id))}` as any,
+                )
+              }
+            >
+              <Text style={styles.primaryButtonText}>Open Duel Detail</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        ) : null}
+
+        <SectionTitle title="How It Works" />
+        <Animated.View
+          entering={FadeInDown.duration(540).delay(160)}
+          style={styles.copyCard}
+        >
+          <Text style={styles.copyText}>{HOW_IT_WORKS}</Text>
+        </Animated.View>
+
+        <Animated.View
+          entering={FadeInDown.duration(560).delay(200)}
+          style={styles.actionCard}
+        >
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.push("/duel")}
+          >
+            <Text style={styles.primaryButtonText}>Enter Arena</Text>
           </TouchableOpacity>
-        )}
+          {wallet.connected && user ? (
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => setShowArenaModal(true)}
+            >
+              <Text style={styles.secondaryButtonText}>Forge Quick Duel</Text>
+            </TouchableOpacity>
+          ) : null}
+        </Animated.View>
 
-        {hasActiveDuel && activeDuel && (
-          <QuestCard
-            title="7-Day Discipline Run"
-            opponentName={activeDuel.player2 ? `#${String(activeDuel.player2).slice(0, 6)}` : "Awaiting Hunter"}
-            stakeLabel={`${activeDuel.stakeAmount} SOL`}
-            progress={Math.min(1, duelProgressDays / 7)}
-            isLive={activeDuel.status === "ACTIVE"}
-            onEnter={() => router.push("/duel")}
-          />
-        )}
+        <SectionTitle title="Payout Rules" />
+        <Animated.View
+          entering={FadeInDown.duration(600).delay(240)}
+          style={styles.rulesCard}
+        >
+          <View style={styles.rulesHeader}>
+            <View style={styles.rulesGlow} />
+            <Text style={styles.rulesTitle}>How The Contract Pays Out</Text>
+            <Text style={styles.rulesCopy}>
+              Outcomes are deterministic, transparent, and enforced the same way for every duel.
+            </Text>
+          </View>
 
-        {!isWalletDisconnected && !isNewPlayer && (
-          <SystemWindow style={styles.flowWindow}>
-            <Text style={styles.sectionLabel}>Duel Flow</Text>
-            <View style={styles.storyList}>
-              {STORY_STEPS.map((step, index) => (
-                <View key={step.title} style={styles.storyRow}>
-                  <View style={styles.storyIndex}>
-                    <Text style={styles.storyIndexText}>{index + 1}</Text>
-                  </View>
-                  <View style={styles.storyBody}>
-                    <Text style={styles.storyTitle}>{step.title}</Text>
-                    <Text style={styles.storyDetail}>{step.detail}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </SystemWindow>
-        )}
-
-        {!isWalletDisconnected && !isNewPlayer && (
-          <SystemWindow style={styles.quickActionWindow}>
-            <Text style={styles.sectionLabel}>Quick Actions</Text>
-            <View style={styles.actionStack}>
-              <GateButton label="Match Me Now" onPress={() => setShowArenaModal(true)} />
-              <GateButton label="Open Duel Board" variant="ghost" onPress={() => router.push("/duel")} />
-            </View>
-          </SystemWindow>
-        )}
-
-        {!isWalletDisconnected && !isNewPlayer && (
-          <SystemWindow style={styles.missionWindow}>
-            <Text style={styles.sectionLabel}>Mission Track</Text>
-            <View style={styles.missionList}>
-              {MISSION_BOARD.map((item) => (
-                <View key={item.title} style={styles.missionRow}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.missionTitle}>{item.title}</Text>
-                  <Text style={styles.missionStatus}>{item.status}</Text>
-                </View>
-              ))}
-            </View>
-          </SystemWindow>
-        )}
-
-        {!isWalletDisconnected && (
-          <SystemWindow style={styles.feedWindow}>
-            <Text style={styles.sectionLabel}>Live Feed</Text>
-            <View style={styles.feedList}>
-              {LIVE_FEED.map((line) => (
-                <Text key={line} style={styles.feedText}>
-                  • {line}
-                </Text>
-              ))}
-            </View>
-          </SystemWindow>
-        )}
+          <View style={styles.rulesStack}>
+            <RuleOutcomeCard
+              title="One Player Wins"
+              accent="orange"
+              lines={[
+                "70% goes to the winner",
+                "25% goes to the loser's redemption vault",
+                "5% goes to the platform",
+              ]}
+            />
+            <RuleOutcomeCard
+              title="Both Players Win"
+              accent="green"
+              lines={[
+                "Each player keeps their full amount",
+                "No vault lock is triggered",
+              ]}
+            />
+            <RuleOutcomeCard
+              title="Both Players Lose"
+              accent="neutral"
+              lines={[
+                "Funds move into each player's redemption vault",
+                "They must win one more duel to recover that amount",
+              ]}
+            />
+          </View>
+        </Animated.View>
       </ScrollView>
 
-      <Modal transparent visible={showRegistration && isNewPlayer} animationType="fade">
+      <Modal
+        transparent
+        visible={showRegistration && isNewPlayer}
+        animationType="fade"
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Register Hunter</Text>
-            <Text style={styles.modalLabel}>Choose username</Text>
+            <Text style={styles.modalLabel}>Choose Username</Text>
             <TextInput
               style={styles.input}
               autoCapitalize="none"
@@ -367,19 +464,26 @@ export default function HomeScreen() {
               onChangeText={setUsernameInput}
             />
 
-            <Text style={styles.modalLabel}>Select avatar</Text>
-            <View style={styles.characterGrid}>
-              {CHARACTER_OPTIONS.map((ch) => {
-                const selected = selectedCharacter === ch.id;
+            <Text style={styles.modalLabel}>Select Character</Text>
+            <View style={styles.modalCharacterGrid}>
+              {CHARACTER_OPTIONS.slice(0, 8).map((character) => {
+                const selected = selectedCharacter === character.id;
                 return (
                   <TouchableOpacity
-                    key={ch.id}
-                    style={[styles.characterCard, selected && styles.characterCardSelected]}
-                    onPress={() => setSelectedCharacter(ch.id)}
+                    key={character.id}
+                    style={[
+                      styles.modalCharacterCard,
+                      selected && styles.modalCharacterCardSelected,
+                    ]}
+                    onPress={() => setSelectedCharacter(character.id)}
                   >
-                    <Image source={ch.image} style={styles.characterImage} />
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                      {ch.name}
+                    <CharacterAvatar
+                      characterId={character.id}
+                      label={character.name}
+                      size={64}
+                    />
+                    <Text style={styles.modalCharacterName}>
+                      {character.name}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -395,57 +499,81 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      <Modal transparent visible={showArenaModal && !!user} animationType="fade">
+      <Modal
+        transparent
+        visible={showArenaModal && !!user}
+        animationType="fade"
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Forge a Duel</Text>
-            <Text style={styles.modalLabel}>Pick stake</Text>
+            <Text style={styles.modalLabel}>Duel Title</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="7-Day Study Sprint"
+              placeholderTextColor={C.slate600}
+              value={duelTitle}
+              onChangeText={setDuelTitle}
+            />
+
+            <Text style={styles.modalLabel}>Mission</Text>
+            <TextInput
+              style={[styles.input, styles.textarea]}
+              placeholder="Explain the habit, rules, or why this duel matters"
+              placeholderTextColor={C.slate600}
+              value={duelDescription}
+              onChangeText={setDuelDescription}
+              multiline
+            />
+
+            <Text style={styles.modalLabel}>Stake</Text>
             <View style={styles.chipRow}>
-              {STAKES.map((s) => {
-                const selected = stake === s;
-                return (
-                  <TouchableOpacity
-                    key={s}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    onPress={() => setStake(s)}
+              {STAKES.map((value) => (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.chip, stake === value && styles.chipActive]}
+                  onPress={() => setStake(value)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      stake === value && styles.chipTextActive,
+                    ]}
                   >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{s} SOL</Text>
-                  </TouchableOpacity>
-                );
-              })}
+                    {value} SOL
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <Text style={styles.modalLabel}>Start countdown</Text>
+            <Text style={styles.modalLabel}>Start Countdown</Text>
             <View style={styles.chipRow}>
-              {START_DELAY_OPTIONS.map((mins) => {
-                const selected = startDelayMins === mins;
-                return (
-                  <TouchableOpacity
-                    key={mins}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    onPress={() => setStartDelayMins(mins)}
+              {START_DELAY_OPTIONS.map((value) => (
+                <TouchableOpacity
+                  key={value}
+                  style={[
+                    styles.chip,
+                    startDelayMins === value && styles.chipActive,
+                  ]}
+                  onPress={() => setStartDelayMins(value)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      startDelayMins === value && styles.chipTextActive,
+                    ]}
                   >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{mins}m</Text>
-                  </TouchableOpacity>
-                );
-              })}
+                    {value}m
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <View style={styles.energyStrip}>
-              <Text style={styles.energyTitle}>Game loop</Text>
-              <Text style={styles.energyText}>Create escrow, join gate, keep daily proof, settle when resolved.</Text>
-            </View>
-
-            {scanning ? (
-              <View style={styles.scanBlock}>
-                <Text style={styles.scanText}>Searching for a rival...</Text>
-                <ProgressBar progress={scanProgress} animated={false} />
-              </View>
+            {arenaMessage ? (
+              <Text style={styles.arenaMessage}>{arenaMessage}</Text>
             ) : null}
 
-            {arenaMessage ? <Text style={styles.arenaMessage}>{arenaMessage}</Text> : null}
-
-            <View style={styles.actionStack}>
+            <View style={styles.modalActions}>
               <GateButton
                 label={createLoading ? "Forging..." : "Create Challenge"}
                 onPress={handleCreateChallenge}
@@ -457,25 +585,47 @@ export default function HomeScreen() {
                 onPress={handleJoinPublic}
                 disabled={createLoading || joinLoading}
               />
-              <GateButton label="Close" variant="ghost" onPress={() => setShowArenaModal(false)} />
+              <GateButton
+                label="Close"
+                variant="ghost"
+                onPress={() => setShowArenaModal(false)}
+              />
             </View>
           </View>
         </View>
       </Modal>
 
-      <Modal transparent visible={showInviteModal && !!inviteDuel && !!user} animationType="fade">
+      <Modal
+        transparent
+        visible={showInviteModal && !!inviteDuel && !!user}
+        animationType="fade"
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Invite Found</Text>
-            <Text style={styles.modalLabel}>Opponent: #{String(inviteDuel?.player1 ?? "").slice(0, 6)}</Text>
-            <Text style={styles.modalLabel}>Stake: {inviteDuel?.stakeAmount ?? 0} SOL</Text>
             <Text style={styles.modalLabel}>
-              Starts: {inviteDuel?.startTime ? new Date(inviteDuel.startTime).toLocaleString() : "TBD"}
+              Opponent: {getParticipantLabel(inviteDuel as any, "player1")}
             </Text>
-
-            <View style={styles.actionStack}>
-              <GateButton label="Join Gate" onPress={handleJoinInvite} disabled={joinLoading} />
-              <GateButton label="Dismiss" variant="ghost" onPress={() => setShowInviteModal(false)} />
+            <Text style={styles.modalLabel}>
+              Stake: {inviteDuel?.stakeAmount ?? 0} SOL
+            </Text>
+            <Text style={styles.modalLabel}>
+              Starts:{" "}
+              {inviteDuel?.startTime
+                ? new Date(inviteDuel.startTime).toLocaleString()
+                : "TBD"}
+            </Text>
+            <View style={styles.modalActions}>
+              <GateButton
+                label="Join Gate"
+                onPress={handleJoinInvite}
+                disabled={joinLoading}
+              />
+              <GateButton
+                label="Dismiss"
+                variant="ghost"
+                onPress={() => setShowInviteModal(false)}
+              />
             </View>
           </View>
         </View>
@@ -484,353 +634,654 @@ export default function HomeScreen() {
   );
 }
 
+function HomeBackground({
+  orbStyle,
+}: {
+  orbStyle: ReturnType<typeof useAnimatedStyle>;
+}) {
+  return (
+    <>
+      <View style={styles.bgHome} />
+      <Animated.View style={[styles.bgHomeOrb, orbStyle]} />
+      <View style={styles.particleLayer}>
+        {Array.from({ length: 7 }).map((_, index) => (
+          <FloatingParticle key={index} index={index} />
+        ))}
+      </View>
+    </>
+  );
+}
+
+function FloatingParticle({ index }: { index: number }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withDelay(
+      index * 260,
+      withRepeat(
+        withTiming(1, { duration: 14000 + index * 500, easing: Easing.linear }),
+        -1,
+        false,
+      ),
+    );
+  }, [index, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.1, 0.9, 1], [0, 0.35, 0.35, 0]),
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [720, -80]) },
+      { scale: interpolate(progress.value, [0, 1], [0, 1]) },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.particle,
+        style,
+        {
+          left: `${10 + index * 12}%`,
+          backgroundColor: index % 2 === 0 ? C.mana : C.success,
+        },
+      ]}
+    />
+  );
+}
+
+function StatTile({
+  value,
+  label,
+  accent,
+  tone,
+}: {
+  value: string;
+  label: string;
+  accent: string;
+  tone: "orange" | "green";
+}) {
+  return (
+    <View
+      style={[
+        styles.statTile,
+        tone === "orange" ? styles.statTileOrange : styles.statTileGreen,
+      ]}
+    >
+      <Text style={[styles.statValue, { color: accent }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return (
+    <View style={styles.sectionTitleRow}>
+      <View style={styles.sectionRule} />
+      <Text style={styles.sectionTitleText}>{title}</Text>
+    </View>
+  );
+}
+
+function RuleOutcomeCard({
+  title,
+  lines,
+  accent,
+}: {
+  title: string;
+  lines: string[];
+  accent: "orange" | "green" | "neutral";
+}) {
+  return (
+    <View
+      style={[
+        styles.ruleOutcomeCard,
+        accent === "orange" && styles.ruleOutcomeOrange,
+        accent === "green" && styles.ruleOutcomeGreen,
+        accent === "neutral" && styles.ruleOutcomeNeutral,
+      ]}
+    >
+      <Text style={styles.ruleOutcomeTitle}>{title}</Text>
+      {lines.map((line) => (
+        <View key={line} style={styles.ruleLine}>
+          <View style={styles.ruleBullet} />
+          <Text style={styles.ruleLineText}>{line}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: C.bg,
+    backgroundColor: "#030304",
   },
   scroll: {
-    padding: 16,
-    gap: 14,
-    paddingBottom: 42,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 40,
   },
-  rowBetween: {
+  bgHome: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#030304",
+  },
+  bgHomeOrb: {
+    position: "absolute",
+    top: 70,
+    left: "50%",
+    marginLeft: -150,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,107,53,0.08)",
+  },
+  particleLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
+  },
+  particle: {
+    position: "absolute",
+    width: 4,
+    height: 4,
+    borderRadius: 999,
+  },
+  topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 14,
+    marginBottom: 20,
   },
-  heroWindow: {
-    overflow: "hidden",
-    borderColor: C.manaBorder,
-    backgroundColor: "rgba(42,20,8,0.97)",
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  heroGlowLarge: {
+  logoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,107,53,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: C.mana,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+  },
+  logoImage: {
+    width: 28,
+    height: 28,
+  },
+  brandText: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  heroSection: {
+    alignItems: "center",
+    marginBottom: 28,
+  },
+  mascotShowcase: {
+    width: 160,
+    height: 160,
+    marginBottom: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mascotRing: {
     position: "absolute",
-    right: -40,
-    top: -28,
-    width: 180,
-    height: 180,
+    width: 160,
+    height: 160,
     borderRadius: 999,
-    backgroundColor: "rgba(255,138,31,0.16)",
+    borderWidth: 2,
+    borderColor: "rgba(255,107,53,0.2)",
   },
-  heroGlowSmall: {
+  mascotRingInner: {
     position: "absolute",
-    left: -18,
-    bottom: -30,
-    width: 120,
-    height: 120,
+    width: 130,
+    height: 130,
     borderRadius: 999,
-    backgroundColor: "rgba(255,179,71,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderStyle: "dashed",
   },
-  heroHeaderCopy: {
-    flex: 1,
-    gap: 6,
+  mascotGlow: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,107,53,0.22)",
   },
-  sectionLabel: {
-    fontFamily: "monospace",
-    fontSize: 10,
-    color: C.mana,
-    letterSpacing: 2,
-    textTransform: "uppercase",
+  mascotAvatar: {
+    width: 110,
+    height: 110,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroTextBlock: {
+    alignItems: "center",
   },
   heroTitle: {
-    color: C.white,
+    color: "#fff",
     fontSize: 28,
-    lineHeight: 34,
     fontWeight: "800",
+    textAlign: "center",
   },
-  heroSubtitle: {
-    color: C.slate400,
-    fontSize: 14,
-    lineHeight: 21,
-    maxWidth: 520,
-  },
-  heroLevelBadge: {
-    minWidth: 92,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-  },
-  heroLevelValue: {
-    color: C.white,
-    fontSize: 20,
-    fontFamily: "monospace",
-    fontWeight: "800",
-  },
-  heroLevelLabel: {
-    color: C.slate500,
-    fontSize: 10,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
-    marginTop: 3,
-  },
-  walletLabel: {
-    color: C.slate400,
-    fontFamily: "monospace",
-    fontSize: 12,
-    marginTop: 18,
-  },
-  statsGrid: {
-    marginTop: 16,
-    flexDirection: "row",
-    gap: 12,
-  },
-  systemOffline: {
-    marginTop: 16,
-    color: C.slate500,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  idleQuestBox: {
-    borderWidth: 1,
-    borderColor: C.manaBorder,
-    borderRadius: 18,
-    padding: 22,
-    backgroundColor: "rgba(255,138,31,0.08)",
-    gap: 8,
-  },
-  idleQuestBadge: {
-    alignSelf: "flex-start",
-    color: C.coal,
-    backgroundColor: C.success,
-    borderRadius: 999,
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    fontFamily: "monospace",
-    fontSize: 10,
-    textTransform: "uppercase",
-  },
-  idleQuestTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: C.white,
-  },
-  idleQuestSub: {
-    color: C.slate400,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  flowWindow: {
-    borderColor: C.glassBorder,
-  },
-  storyList: {
-    gap: 10,
-    marginTop: 12,
-  },
-  storyRow: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "flex-start",
-  },
-  storyIndex: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: C.emberSoft,
-    borderWidth: 1,
-    borderColor: C.manaBorder,
-  },
-  storyIndexText: {
+  heroAccent: {
     color: C.mana,
-    fontFamily: "monospace",
-    fontWeight: "800",
   },
-  storyBody: {
-    flex: 1,
-    gap: 4,
+  heroCopy: {
+    marginTop: 10,
+    maxWidth: 280,
+    color: "#9b9ba3",
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
   },
-  storyTitle: {
-    color: C.white,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  storyDetail: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  quickActionWindow: {
-    borderColor: "rgba(255,107,26,0.3)",
-    backgroundColor: "rgba(255,107,26,0.08)",
-  },
-  actionStack: {
-    gap: 10,
-    marginTop: 12,
-  },
-  missionWindow: {
-    borderColor: C.purpleBorder,
-    backgroundColor: "rgba(255,179,71,0.08)",
-  },
-  missionList: {
-    gap: 10,
-    marginTop: 12,
-  },
-  missionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  statusDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 99,
-    backgroundColor: C.success,
-  },
-  missionTitle: {
-    flex: 1,
-    color: C.white,
-    fontSize: 13,
-  },
-  missionStatus: {
-    color: C.purple,
-    fontFamily: "monospace",
-    fontSize: 10,
-    textTransform: "uppercase",
-  },
-  feedWindow: {
-    borderColor: "rgba(255,138,31,0.28)",
-    backgroundColor: "rgba(255,138,31,0.06)",
-  },
-  feedList: {
-    gap: 8,
-    marginTop: 12,
-  },
-  feedText: {
-    color: C.slate400,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(11,6,3,0.88)",
-    justifyContent: "center",
-    padding: 18,
-  },
-  modalCard: {
-    backgroundColor: "rgba(35,19,9,0.98)",
+  statsCard: {
+    backgroundColor: "rgba(12,12,16,0.85)",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: C.manaBorder,
-    padding: 18,
-    gap: 10,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 20,
+    marginBottom: 26,
   },
-  modalTitle: {
-    color: C.white,
-    fontSize: 22,
-    fontWeight: "800",
+  statsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
   },
-  modalLabel: {
-    color: C.slate400,
+  statsLabel: {
+    color: "#666",
     fontSize: 11,
-    fontFamily: "monospace",
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: C.glassBorder,
+  liveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: C.success,
+  },
+  liveText: {
+    color: C.success,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  statTile: {
+    flex: 1,
     borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: C.white,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  statTileOrange: {
+    backgroundColor: "rgba(255,107,53,0.12)",
+    borderColor: "rgba(255,107,53,0.1)",
+  },
+  statTileGreen: {
+    backgroundColor: "rgba(0,214,143,0.12)",
+    borderColor: "rgba(0,214,143,0.1)",
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: "800",
+  },
+  statLabel: {
+    marginTop: 4,
+    color: "#555",
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  metaLine: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 14,
+  },
+  metaText: {
+    color: "#8d8d96",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  metaDivider: {
+    marginHorizontal: 8,
+    color: "#444",
+  },
+  noticeCard: {
+    backgroundColor: "rgba(255,107,53,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,107,53,0.18)",
+    padding: 14,
+    marginBottom: 22,
+  },
+  noticeTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  noticeCopy: {
+    marginTop: 4,
+    color: "#9b9ba3",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  liveDuelCard: {
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 18,
+    marginBottom: 22,
+  },
+  sectionTitle: {
+    color: "#666",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  liveDuelTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  liveDuelCopy: {
+    marginTop: 6,
+    color: "#9b9ba3",
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 14,
+  },
+  sectionRule: {
+    width: 20,
+    height: 1,
+    backgroundColor: C.mana,
+  },
+  sectionTitleText: {
+    color: "#444",
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 2,
   },
   characterGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 6,
+    gap: 12,
+    marginBottom: 26,
   },
   characterCard: {
-    width: "31%",
-    minWidth: 92,
+    width: "30.5%",
+    minWidth: 94,
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: C.glassBorder,
-    borderRadius: 14,
-    padding: 6,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 12,
+    alignItems: "center",
+    gap: 8,
   },
   characterCardSelected: {
-    borderColor: C.mana,
-    backgroundColor: C.manaDim,
+    borderColor: "rgba(255,107,53,0.28)",
+    backgroundColor: "rgba(20,20,28,0.9)",
   },
-  characterImage: {
-    width: "100%",
-    height: 72,
-    borderRadius: 10,
-    marginBottom: 6,
+  characterName: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  copyCard: {
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 18,
+    marginBottom: 20,
+  },
+  copyText: {
+    color: "#888",
+    fontSize: 13,
+    lineHeight: 22,
+  },
+  actionCard: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  rulesCard: {
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "rgba(12,12,16,0.85)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 18,
+    marginBottom: 24,
+  },
+  rulesHeader: {
+    marginBottom: 14,
+  },
+  rulesGlow: {
+    position: "absolute",
+    top: -24,
+    right: -10,
+    width: 110,
+    height: 110,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,107,53,0.12)",
+  },
+  rulesTitle: {
+    color: "#fff",
+    fontSize: 19,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  rulesCopy: {
+    color: "#9b9ba3",
+    fontSize: 13,
+    lineHeight: 20,
+    maxWidth: 300,
+  },
+  rulesStack: {
+    gap: 12,
+  },
+  ruleOutcomeCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 10,
+  },
+  ruleOutcomeOrange: {
+    backgroundColor: "rgba(255,107,53,0.08)",
+    borderColor: "rgba(255,107,53,0.14)",
+  },
+  ruleOutcomeGreen: {
+    backgroundColor: "rgba(0,214,143,0.08)",
+    borderColor: "rgba(0,214,143,0.14)",
+  },
+  ruleOutcomeNeutral: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  ruleOutcomeTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  ruleLine: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  ruleBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: C.mana,
+    marginTop: 6,
+  },
+  ruleLineText: {
+    flex: 1,
+    color: "#d1d1d8",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  primaryButton: {
+    backgroundColor: C.mana,
+    borderRadius: 14,
+    paddingVertical: 18,
+    alignItems: "center",
+    shadowColor: C.mana,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+  },
+  primaryButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+  },
+  secondaryButton: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 18,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.88)",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  modalCard: {
+    backgroundColor: "rgba(12,12,16,0.98)",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 20,
+  },
+  modalTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  modalLabel: {
+    color: "#8d8d96",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    color: "#fff",
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  textarea: {
+    minHeight: 92,
+    textAlignVertical: "top",
+  },
+  modalCharacterGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 16,
+  },
+  modalCharacterCard: {
+    width: "22%",
+    minWidth: 74,
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.02)",
+  },
+  modalCharacterCardSelected: {
+    borderColor: "rgba(255,107,53,0.28)",
+  },
+  modalCharacterName: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
   },
   chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 6,
+    marginBottom: 12,
   },
   chip: {
-    borderWidth: 1,
-    borderColor: C.glassBorder,
     borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
     backgroundColor: "rgba(255,255,255,0.03)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  chipSelected: {
-    borderColor: C.mana,
-    backgroundColor: C.manaDim,
+  chipActive: {
+    borderColor: "rgba(255,107,53,0.28)",
+    backgroundColor: "rgba(255,107,53,0.1)",
   },
   chipText: {
-    color: C.slate400,
-    fontFamily: "monospace",
-    fontSize: 11,
-    textTransform: "uppercase",
+    color: "#8d8d96",
+    fontSize: 12,
+    fontWeight: "700",
   },
-  chipTextSelected: {
-    color: C.white,
-  },
-  energyStrip: {
-    borderRadius: 16,
-    padding: 14,
-    backgroundColor: "rgba(255,179,71,0.08)",
-    borderWidth: 1,
-    borderColor: C.purpleBorder,
-    gap: 4,
-    marginVertical: 6,
-  },
-  energyTitle: {
-    color: C.purple,
-    fontFamily: "monospace",
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-  },
-  energyText: {
-    color: C.white,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  scanBlock: {
-    gap: 8,
-  },
-  scanText: {
-    color: C.mana,
-    fontSize: 10,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
+  chipTextActive: {
+    color: "#fff",
   },
   arenaMessage: {
-    color: C.slate400,
+    color: C.success,
     fontSize: 12,
     lineHeight: 18,
+    marginBottom: 10,
+  },
+  modalActions: {
+    gap: 10,
   },
 });

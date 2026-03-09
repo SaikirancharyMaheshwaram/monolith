@@ -27,8 +27,8 @@ import { useUserStore } from "@/stores/userStore";
 import { useWalletStore } from "@/stores/use-wallet-store";
 
 const APP_IDENTITY = {
-  name: "SolScan",
-  uri: "https://solscan.io",
+  name: "Strivoiz",
+  uri: "https://strivioz.vercel.app",
   icon: "favicon.ico",
 };
 
@@ -63,7 +63,7 @@ const VAULT_SEED = Buffer.from("vault");
 const BPF_UPGRADEABLE_LOADER_PROGRAM_ID = new PublicKey(
   "BPFLoaderUpgradeab1e11111111111111111111111",
 );
-const DUEL_DURATION_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_DUEL_DURATION_SECONDS = 7 * 24 * 60 * 60;
 const CREATE_DUEL_MIN_START_OFFSET_SECONDS = 60;
 const DUEL_ACCOUNT_SPACE = 157;
 const DEFAULT_FEE_LAMPORTS = 10_000;
@@ -71,6 +71,7 @@ const DEFAULT_FEE_LAMPORTS = 10_000;
 type CreateOnChainDuelInput = {
   stakeAmountSol: number;
   startTimeMs: number;
+  endTimeMs?: number;
   duelNonce?: number;
 };
 
@@ -371,8 +372,8 @@ export function useWallet(): WalletHook {
   const isDevnet = useWalletStore((s) => s.isDevnet);
   const storedPublicKey = useWalletStore((s) => s.publicKey);
   const setStoredPublicKey = useWalletStore((s) => s.setPublicKey);
-
-  const authTokenRef = useRef<string | null>(null);
+  const storedAuthToken = useWalletStore((s) => s.authToken);
+  const setStoredAuthToken = useWalletStore((s) => s.setAuthToken);
   const previousWalletRef = useRef<string | null>(null);
 
   const cluster = isDevnet ? "devnet" : "mainnet-beta";
@@ -397,17 +398,17 @@ export function useWallet(): WalletHook {
 
   const authorizeWalletSession = useCallback(
     async (wallet: Web3MobileWallet, address?: string) => {
-      if (authTokenRef.current) {
+      if (storedAuthToken) {
         try {
           const reauth = await wallet.reauthorize({
-            auth_token: authTokenRef.current,
+            auth_token: storedAuthToken,
             identity: APP_IDENTITY,
           });
-          authTokenRef.current = reauth.auth_token;
+          setStoredAuthToken(reauth.auth_token);
           return reauth;
         } catch (error) {
           if (isWalletRequestDeclined(error)) throw error;
-          authTokenRef.current = null;
+          setStoredAuthToken(null);
         }
       }
 
@@ -416,10 +417,10 @@ export function useWallet(): WalletHook {
         identity: APP_IDENTITY,
         ...(address ? { addresses: [address] } : {}),
       });
-      authTokenRef.current = auth.auth_token;
+      setStoredAuthToken(auth.auth_token);
       return auth;
     },
-    [cluster],
+    [cluster, setStoredAuthToken, storedAuthToken],
   );
 
   useEffect(() => {
@@ -441,9 +442,12 @@ export function useWallet(): WalletHook {
       useUserStore.getState().reset();
       useDuelStore.getState().reset();
       useArenaStore.getState().reset();
+      if (previousWallet && previousWallet !== storedPublicKey) {
+        setStoredAuthToken(null);
+      }
       previousWalletRef.current = storedPublicKey;
     }
-  }, [storedPublicKey]);
+  }, [setStoredAuthToken, storedPublicKey]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -455,6 +459,8 @@ export function useWallet(): WalletHook {
         });
         return result;
       });
+
+      setStoredAuthToken(authResult.auth_token);
 
       const pubkey = new PublicKey(
         Buffer.from(authResult.accounts[0].address, "base64"),
@@ -468,14 +474,14 @@ export function useWallet(): WalletHook {
     } finally {
       setConnecting(false);
     }
-  }, [cluster, setStoredPublicKey]);
+  }, [cluster, setStoredAuthToken, setStoredPublicKey]);
 
   const disconnect = useCallback(() => {
     setStoredPublicKey(null);
-    authTokenRef.current = null;
+    setStoredAuthToken(null);
     useWalletStore.getState().setStatus("public");
     void clearToken();
-  }, [setStoredPublicKey]);
+  }, [setStoredAuthToken, setStoredPublicKey]);
 
   const getBalance = useCallback(async () => {
     if (!publicKey) return 0;
@@ -620,6 +626,7 @@ export function useWallet(): WalletHook {
     async ({
       stakeAmountSol,
       startTimeMs,
+      endTimeMs,
       duelNonce,
     }: CreateOnChainDuelInput) => {
       if (!publicKey) throw new Error("Wallet not connected");
@@ -634,7 +641,16 @@ export function useWallet(): WalletHook {
         requestedStartSeconds,
         nowSeconds + CREATE_DUEL_MIN_START_OFFSET_SECONDS,
       );
-      const endTimeSeconds = startTimeSeconds + DUEL_DURATION_SECONDS;
+      const requestedEndSeconds = endTimeMs
+        ? Math.floor(endTimeMs / 1000)
+        : startTimeSeconds + DEFAULT_DUEL_DURATION_SECONDS;
+      const endTimeSeconds = Math.max(
+        requestedEndSeconds,
+        startTimeSeconds + 60,
+      );
+      if (endTimeSeconds <= startTimeSeconds) {
+        throw new Error("End time must be after start time");
+      }
       const duelNonceBuffer = writeUInt64LE(nonce);
 
       const [duelPda] = PublicKey.findProgramAddressSync(

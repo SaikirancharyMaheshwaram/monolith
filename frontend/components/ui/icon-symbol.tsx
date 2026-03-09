@@ -19,6 +19,7 @@ const MAPPING = {
   "shield.lefthalf.filled": "security",
   "person.fill": "person",
   "bolt.fill": "flash-on",
+  "shield.fill": "shield",
 } as IconMapping;
 
 export function IconSymbol({
@@ -33,5 +34,12 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  return (
+    <MaterialIcons
+      color={color}
+      size={size}
+      name={MAPPING[name]}
+      style={style}
+    />
+  );
 }

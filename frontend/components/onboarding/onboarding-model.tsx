@@ -1,3 +1,4 @@
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { CHARACTER_OPTIONS, CharacterId } from "@/components/characters";
 import { C } from "@/components/lobby-theme";
 import { api } from "@/convex/_generated/api";
@@ -6,7 +7,6 @@ import { useMutation } from "convex/react";
 import { useState } from "react";
 import {
   FlatList,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -27,7 +27,7 @@ export default function OnboardingModal() {
   const setStatus = useWalletStore((s) => s.setStatus);
 
   const [username, setUsername] = useState("");
-  const [selectedCharacter, setSelectedCharacter] = useState<CharacterId>("warrior");
+  const [selectedCharacter, setSelectedCharacter] = useState<CharacterId>("samurai");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -95,7 +95,7 @@ export default function OnboardingModal() {
                         selected && styles.characterSelected,
                       ]}
                     >
-                      <Image source={item.image} style={styles.avatar} resizeMode="cover" />
+                      <CharacterAvatar characterId={item.id} label={item.name} size={90} />
                       <Text style={styles.characterText}>{item.name}</Text>
                     </Pressable>
                   );
@@ -180,13 +180,6 @@ const styles = StyleSheet.create({
   characterSelected: {
     borderColor: C.mana,
     backgroundColor: C.manaDim,
-  },
-
-  avatar: {
-    width: "100%",
-    height: 90,
-    borderRadius: 8,
-    marginBottom: 8,
   },
 
   characterText: {

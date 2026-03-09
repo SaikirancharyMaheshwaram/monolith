@@ -2,7 +2,6 @@ import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DUEL_DAYS = 1;
 const GRACE_WINDOW = 2 * 60 * 1000; // 2 minutes
 
 export const submitCompletion = mutation({
@@ -28,6 +27,9 @@ export const submitCompletion = mutation({
     if (duel.status !== "ACTIVE") {
       throw new Error("Duel not active");
     }
+    if (!duel.startTime || !duel.endTime) {
+      throw new Error("Duel timing is incomplete");
+    }
 
     if (args.player !== duel.player1 && args.player !== duel.player2) {
       throw new Error("Player not part of duel");
@@ -35,11 +37,11 @@ export const submitCompletion = mutation({
 
     const now = Date.now();
 
-    if (now < duel.startTime!) {
+    if (now < duel.startTime) {
       throw new Error("Duel has not started yet");
     }
 
-    if (now >= duel.endTime! + GRACE_WINDOW) {
+    if (now >= duel.endTime + GRACE_WINDOW) {
       throw new Error("Duel already finished");
     }
 
@@ -47,11 +49,11 @@ export const submitCompletion = mutation({
     const effectiveTime = now - GRACE_WINDOW;
 
     const dayNumber =
-      Math.floor((effectiveTime - duel.startTime!) / DAY_MS) + 1;
+      Math.floor((effectiveTime - duel.startTime) / DAY_MS) + 1;
+    const duelDurationMs = Math.max(duel.endTime - duel.startTime, 1);
+    const totalDays = Math.max(1, Math.ceil(duelDurationMs / DAY_MS));
 
-    console.log({ dayNumber });
-
-    if (dayNumber < 0 || dayNumber > DUEL_DAYS) {
+    if (dayNumber < 1 || dayNumber > totalDays) {
       throw new Error("Invalid submission day");
     }
 

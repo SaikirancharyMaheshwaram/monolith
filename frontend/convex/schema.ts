@@ -36,6 +36,8 @@ export default defineSchema({
 
   duels: defineTable({
     mode: v.union(v.literal("PUBLIC"), v.literal("FRIEND")),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
 
     player1: v.id("users"),
     player2: v.optional(v.id("users")),
